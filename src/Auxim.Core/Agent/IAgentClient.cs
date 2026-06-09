@@ -1,0 +1,6 @@
+namespace Auxim.Core.Agent;
+
+public interface IAgentClient
+{
+    Task<string> CompleteAsync(IReadOnlyList<AgentMessage> messages, CancellationToken cancellationToken);
+}

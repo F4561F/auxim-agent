@@ -1,0 +1,44 @@
+# Build output
+bin/
+obj/
+dist/
+TestResults/
+coverage/
+coverage.xml
+*.coverage
+*.coveragexml
+
+# Local published app symlink/binary
+/auxim
+
+# User secrets and local Auxim state
+.env
+.env.*
+!.env.example
+.auxim/
+config.local.json
+approvals.json
+todos.json
+current_session
+sessions/
+logs/
+
+# .NET and IDE state
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+
+# OS files
+.DS_Store
+Thumbs.db

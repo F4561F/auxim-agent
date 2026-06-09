@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>auxim</AssemblyName>
+    <RootNamespace>Auxim.Cli</RootNamespace>
+    <UseAppHost>true</UseAppHost>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Auxim.Core\Auxim.Core.csproj" />
+    <ProjectReference Include="..\Auxim.Tools\Auxim.Tools.csproj" />
+  </ItemGroup>
+</Project>
