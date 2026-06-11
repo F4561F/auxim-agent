@@ -10,7 +10,7 @@ public static class FileTools
         registry.Register(new ToolDefinition(
             "file.read",
             "files",
-            "Reads a UTF-8 text file under /workspace or mounted /volumes paths.",
+            "Reads a UTF-8 text file under /workspace, /tmp, or mounted /volumes paths.",
             (args, _) =>
             {
                 var path = Vfs().ResolveToHostPath(Required(args, "path"));
@@ -23,7 +23,7 @@ public static class FileTools
         registry.Register(new ToolDefinition(
             "file.write",
             "files",
-            "Writes UTF-8 text to a file under writable /workspace or mounted /volumes paths.",
+            "Writes UTF-8 text to a file under writable /workspace, /tmp, or mounted /volumes paths.",
             (args, _) =>
             {
                 var vfs = Vfs();
@@ -46,7 +46,7 @@ public static class FileTools
         registry.Register(new ToolDefinition(
             "file.patch",
             "files",
-            "Replaces exact text in a file under writable /workspace or mounted /volumes paths.",
+            "Replaces exact text in a file under writable /workspace, /tmp, or mounted /volumes paths.",
             (args, _) =>
             {
                 var vfs = Vfs();
@@ -82,14 +82,14 @@ public static class FileTools
         registry.Register(new ToolDefinition(
             "file.list",
             "files",
-            "Lists files and directories under /workspace or mounted /volumes paths.",
+            "Lists files and directories under /workspace, /tmp, or mounted /volumes paths.",
             (args, _) =>
             {
                 var vfs = Vfs();
                 var requestedPath = args.TryGetValue("path", out var value) ? value?.ToString() ?? "/workspace" : "/workspace";
                 if (requestedPath == "/")
                 {
-                    return Task.FromResult(string.Join(Environment.NewLine, ["/workspace/", "/volumes/"]));
+                    return Task.FromResult(string.Join(Environment.NewLine, ["/workspace/", "/tmp/", "/volumes/"]));
                 }
 
                 if (requestedPath == "/volumes")

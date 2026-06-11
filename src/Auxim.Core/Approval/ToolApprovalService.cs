@@ -1,8 +1,16 @@
 using System.Text.Json;
 using Auxim.Core.Config;
-using Auxim.Core.Logging;
 
 namespace Auxim.Core.Approval;
+
+/// <summary>
+/// Delegate that prompts the user for tool approval in an interactive terminal.
+/// Returns the approval decision together with a flag indicating whether the
+/// user chose "always allow" (so the store can persist it).
+/// </summary>
+public delegate (ToolApprovalDecision Decision, bool AlwaysAllow) ApprovalUIPrompt(
+    string toolName,
+    IReadOnlyDictionary<string, object?> arguments);
 
 public sealed class ToolApprovalService
 {
@@ -15,9 +23,15 @@ public sealed class ToolApprovalService
     };
 
     private readonly string _storePath;
+    private readonly ApprovalUIPrompt? _uiPrompt;
 
-    public ToolApprovalService(string? home = null)
+    /// <param name="uiPrompt">
+    /// Optional interactive prompt. When null the service operates in
+    /// non-interactive mode and always denies high-risk tools.
+    /// </param>
+    public ToolApprovalService(ApprovalUIPrompt? uiPrompt = null, string? home = null)
     {
+        _uiPrompt = uiPrompt;
         home ??= ConfigLoader.GetAuximHome();
         _storePath = Path.Combine(home, "approvals.json");
     }
@@ -35,53 +49,21 @@ public sealed class ToolApprovalService
             return ToolApprovalDecision.Allow;
         }
 
-        if (Console.IsInputRedirected)
+        if (_uiPrompt is not null)
         {
-            return ToolApprovalDecision.Deny(
-                "Tool approval is required, but the process is not attached to an interactive terminal.");
-        }
-
-        Console.WriteLine();
-        Console.WriteLine("+--------------------------------------------------+");
-        Console.WriteLine("| Auxim Safety Review                            |");
-        Console.WriteLine("+--------------------------------------------------+");
-        Console.WriteLine($"Tool: {toolName}");
-        Console.WriteLine("Risk: may modify files, mark state, or execute commands.");
-        Console.WriteLine("Arguments:");
-        Console.WriteLine(JsonSerializer.Serialize(arguments, JsonOptions()));
-        Console.WriteLine();
-        Console.WriteLine("1. Allow once");
-        Console.WriteLine("2. Always allow this tool");
-        Console.WriteLine("3. Deny and give feedback");
-        Console.WriteLine();
-
-        while (true)
-        {
-            Console.Write("Choice [1/2/3]: ");
-            var choice = Console.ReadLine()?.Trim();
-            switch (choice)
+            var (decision, alwaysAllow) = _uiPrompt(toolName, arguments);
+            if (alwaysAllow)
             {
-                case "1":
-                    AuximLog.Info($"approval.allow_once tool={toolName}");
-                    return ToolApprovalDecision.Allow;
-                case "2":
-                    store.AlwaysAllowedTools.Add(toolName);
-                    SaveStore(store);
-                    AuximLog.Info($"approval.always_allow tool={toolName}");
-                    return ToolApprovalDecision.Allow;
-                case "3":
-                    Console.Write("Reason or suggestion for the model: ");
-                    var reason = Console.ReadLine();
-                    reason = string.IsNullOrWhiteSpace(reason)
-                        ? "User denied this tool call."
-                        : reason.Trim();
-                    AuximLog.Warning($"approval.denied tool={toolName} reason={reason}");
-                    return ToolApprovalDecision.Deny(reason);
-                default:
-                    Console.WriteLine("Choose 1, 2, or 3.");
-                    break;
+                store.AlwaysAllowedTools.Add(toolName);
+                SaveStore(store);
             }
+
+            return decision;
         }
+
+        // Non-interactive fallback: always deny high-risk tools when no UI is attached.
+        return ToolApprovalDecision.Deny(
+            "Tool approval is required, but the process is not attached to an interactive terminal.");
     }
 
     public IReadOnlyList<string> ListAlwaysAllowedTools()
@@ -94,6 +76,19 @@ public sealed class ToolApprovalService
     public void ClearAlwaysAllowedTools()
     {
         SaveStore(new ApprovalStore());
+    }
+
+    public bool RevokeAlwaysAllowedTool(string toolName)
+    {
+        var store = LoadStore();
+        var removed = store.AlwaysAllowedTools.RemoveAll(
+            tool => string.Equals(tool, toolName, StringComparison.OrdinalIgnoreCase)) > 0;
+        if (removed)
+        {
+            SaveStore(store);
+        }
+
+        return removed;
     }
 
     private ApprovalStore LoadStore()

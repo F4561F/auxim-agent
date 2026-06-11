@@ -12,6 +12,7 @@ public static partial class CommandHandlers
         {
             "clear" => ClearApprovals(service),
             "list" => ListApprovals(service),
+            "revoke" => RevokeApproval(service, args.Skip(1).FirstOrDefault()),
             _ => PrintApprovalHelp(),
         };
     }
@@ -40,10 +41,29 @@ public static partial class CommandHandlers
         return 0;
     }
 
+    private static int RevokeApproval(ToolApprovalService service, string? toolName)
+    {
+        if (string.IsNullOrWhiteSpace(toolName))
+        {
+            Console.WriteLine("Usage: auxim approval revoke <tool-name>");
+            return 1;
+        }
+
+        if (!service.RevokeAlwaysAllowedTool(toolName))
+        {
+            Console.WriteLine($"Tool is not always allowed: {toolName}");
+            return 1;
+        }
+
+        Console.WriteLine($"Revoked always-allowed approval for: {toolName}");
+        return 0;
+    }
+
     private static int PrintApprovalHelp()
     {
         Console.WriteLine("Usage:");
         Console.WriteLine("  auxim approval list");
+        Console.WriteLine("  auxim approval revoke <tool-name>");
         Console.WriteLine("  auxim approval clear");
         return 1;
     }

@@ -1,8 +1,8 @@
+using System.Text.Json;
+using Auxim.Core.Approval;
 using Auxim.Core.Tools;
 using Auxim.Core.Logging;
-using Auxim.Core.Approval;
 using Auxim.Core.Vafs;
-using System.Text.Json;
 
 namespace Auxim.Core.Agent;
 
@@ -18,7 +18,7 @@ public sealed class AuximAgent
         _client = client;
         _tools = tools;
         _options = options ?? new AgentOptions();
-        _approval = new ToolApprovalService();
+        _approval = new ToolApprovalService(_options.ApprovalPrompt);
     }
 
     public async Task<string> ChatAsync(string message, CancellationToken cancellationToken = default)
@@ -64,6 +64,7 @@ public sealed class AuximAgent
         return string.Join(Environment.NewLine, [
             $"You are Auxim. Provider={_options.Provider}; Model={_options.Model}.",
             "Use Auxim VAFS paths only. Never assume or mention host filesystem paths.",
+            "Use /tmp for temporary generated files and scratch output.",
             VirtualFileSystem.FromEnvironment().DescribeForAgent(),
         ]);
     }
@@ -76,7 +77,7 @@ public sealed class AuximAgent
         var tools = _tools.List().ToArray();
         for (var iteration = 0; iteration < _options.MaxIterations; iteration++)
         {
-            var completion = await client.CompleteWithToolsAsync(messages, tools, cancellationToken);
+            var completion = await CompleteWithToolsAsync(client, messages, tools, cancellationToken);
             if (!completion.HasToolCalls)
             {
                 messages.Add(new AgentMessage("assistant", completion.Content));
@@ -92,8 +93,10 @@ public sealed class AuximAgent
             foreach (var call in completion.ToolCalls)
             {
                 AuximLog.Info($"tool.start name={call.Name} args={call.ArgumentsJson}");
+                _options.ToolEventSink?.Invoke(new ToolEvent("start", call.Name, call.ArgumentsJson));
                 var result = await InvokeToolCallAsync(call, cancellationToken);
                 AuximLog.Info($"tool.done name={call.Name} chars={result.Content.Length}");
+                _options.ToolEventSink?.Invoke(new ToolEvent("done", call.Name, $"{result.Content.Length} chars"));
                 messages.Add(new AgentMessage("tool", result.Content)
                 {
                     Name = call.Name,
@@ -115,6 +118,24 @@ public sealed class AuximAgent
         }
 
         throw new InvalidOperationException($"Tool-calling loop exceeded {_options.MaxIterations} iterations.");
+    }
+
+    private Task<AgentClientResponse> CompleteWithToolsAsync(
+        IToolCallingAgentClient client,
+        IReadOnlyList<AgentMessage> messages,
+        IReadOnlyList<ToolDefinition> tools,
+        CancellationToken cancellationToken)
+    {
+        if (_options.ContentDeltaSink is not null && client is IStreamingToolCallingAgentClient streamingClient)
+        {
+            return streamingClient.CompleteWithToolsStreamingAsync(
+                messages,
+                tools,
+                _options.ContentDeltaSink,
+                cancellationToken);
+        }
+
+        return client.CompleteWithToolsAsync(messages, tools, cancellationToken);
     }
 
     private async Task<ToolInvocationResult> InvokeToolCallAsync(ToolCallRequest call, CancellationToken cancellationToken)

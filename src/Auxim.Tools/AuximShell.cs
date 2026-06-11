@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Auxim.Core.Utilities;
 using Auxim.Core.Vafs;
 
 namespace Auxim.Tools;
@@ -75,7 +76,7 @@ internal sealed class AuximShell
         var path = tokens.Count >= 2 ? tokens[1] : "/workspace";
         if (path == "/")
         {
-            return FormatResult(0, "/workspace/\n/volumes/\n", "");
+            return FormatResult(0, "/workspace/\n/tmp/\n/volumes/\n", "");
         }
 
         if (path == "/volumes")
@@ -173,9 +174,10 @@ internal sealed class AuximShell
         {
             if (arg.StartsWith('/')
                 && !arg.StartsWith("/workspace", StringComparison.Ordinal)
+                && !arg.StartsWith("/tmp", StringComparison.Ordinal)
                 && !arg.StartsWith("/volumes", StringComparison.Ordinal))
             {
-                throw new InvalidOperationException("auxim-shell only accepts virtual absolute paths under /workspace or /volumes.");
+                throw new InvalidOperationException("auxim-shell only accepts virtual absolute paths under /workspace, /tmp, or /volumes.");
             }
 
             if (arg.StartsWith('-') || !LooksLikePath(arg))
@@ -217,63 +219,13 @@ internal sealed class AuximShell
                 "auxim-shell does not allow shell operators, pipes, redirects, substitutions, or command chaining.");
         }
 
-        var tokens = new List<string>();
-        var current = new List<char>();
-        char? quote = null;
-        foreach (var character in command)
-        {
-            if (quote is not null)
-            {
-                if (character == quote)
-                {
-                    quote = null;
-                }
-                else
-                {
-                    current.Add(character);
-                }
-
-                continue;
-            }
-
-            if (character is '\'' or '"')
-            {
-                quote = character;
-                continue;
-            }
-
-            if (char.IsWhiteSpace(character))
-            {
-                Flush();
-                continue;
-            }
-
-            current.Add(character);
-        }
-
-        if (quote is not null)
-        {
-            throw new InvalidOperationException("Unclosed quote in auxim-shell command.");
-        }
-
-        Flush();
-        return tokens;
-
-        void Flush()
-        {
-            if (current.Count == 0)
-            {
-                return;
-            }
-
-            tokens.Add(new string(current.ToArray()));
-            current.Clear();
-        }
+        return CommandTokenizer.Tokenize(command, throwOnUnclosedQuote: true);
     }
 
     private static bool LooksLikePath(string arg) =>
         arg is "." or ".."
         || arg.StartsWith("/workspace", StringComparison.Ordinal)
+        || arg.StartsWith("/tmp", StringComparison.Ordinal)
         || arg.StartsWith("/volumes", StringComparison.Ordinal)
         || arg.StartsWith("./", StringComparison.Ordinal)
         || arg.StartsWith("../", StringComparison.Ordinal)

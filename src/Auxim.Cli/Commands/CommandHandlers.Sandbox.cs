@@ -25,6 +25,7 @@ public static partial class CommandHandlers
         Console.WriteLine("Auxim Sandbox");
         Console.WriteLine($"Config:    {ConfigLoader.GetConfigPath()}");
         Console.WriteLine($"Workspace: /workspace -> {WorkspaceHostPath(config)}");
+        Console.WriteLine($"Temp:      /tmp -> {vfs.ResolveToHostPath("/tmp")}");
         Console.WriteLine("Mounts:");
 
         var mounts = config.Sandbox.Mounts

@@ -1,11 +1,15 @@
-using Auxim.Core.Agent;
-using Auxim.Core.Config;
-using Auxim.Core.State;
 using Auxim.Cli;
+using Auxim.Cli.Interactive;
+using Auxim.Cli.Services;
 using Auxim.Tools;
 
 try
 {
+    if (args.Length == 0)
+    {
+        return await InteractiveShell.RunAsync();
+    }
+
     var command = args.FirstOrDefault() ?? "help";
 
     switch (command)
@@ -19,19 +23,7 @@ try
                 return 1;
             }
 
-            var config = ConfigLoader.Load();
-            var options = new AgentOptions
-            {
-                Provider = config.Model.Provider,
-                Model = config.Model.Name,
-                MaxIterations = config.Agent.MaxIterations,
-            };
-
-            var sessions = new SessionStore();
-            var session = sessions.GetOrCreateCurrent();
-            var agent = new AuximAgent(AgentClientFactory.Create(config), BuiltInTools.CreateDefaultRegistry(), options);
-            var result = await agent.RunConversationAsync(prompt, session.Messages);
-            sessions.AppendTurn(session, prompt, result.FinalResponse);
+            var result = await new ChatRunner().RunAsync(prompt);
             Console.WriteLine(result.FinalResponse);
             return 0;
         }

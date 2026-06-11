@@ -14,6 +14,13 @@ public sealed class VirtualFileSystem
 
     public VirtualFileSystem(VirtualFileSystemOptions options)
     {
+        var tmpMount = NormalizeMount(new VirtualMount(
+            "tmp",
+            "/tmp",
+            options.TmpHostPath,
+            ReadOnly: false));
+        tmpMount = EnsureWritableTmpMount(tmpMount);
+
         var mounts = new List<VirtualMount>
         {
             NormalizeMount(new VirtualMount(
@@ -21,6 +28,7 @@ public sealed class VirtualFileSystem
                 "/workspace",
                 options.WorkspaceHostPath,
                 ReadOnly: false)),
+            tmpMount,
         };
 
         foreach (var mount in options.Mounts)
@@ -43,7 +51,7 @@ public sealed class VirtualFileSystem
         var virtualPath = NormalizeVirtualPath(path);
         var mount = FindMountForVirtualPath(virtualPath)
             ?? throw new VirtualPathException(
-                $"Path '{path}' is outside Auxim VAFS. Use /workspace or mounted /volumes paths.");
+                $"Path '{path}' is outside Auxim VAFS. Use /workspace, /tmp, or mounted /volumes paths.");
 
         if (requireWritable && mount.ReadOnly)
         {
@@ -126,9 +134,11 @@ public sealed class VirtualFileSystem
         }
 
         var virtualPath = NormalizeVirtualPath(mount.VirtualPath);
-        if (virtualPath != "/workspace" && !virtualPath.StartsWith("/volumes/", StringComparison.Ordinal))
+        if (virtualPath != "/workspace"
+            && virtualPath != "/tmp"
+            && !virtualPath.StartsWith("/volumes/", StringComparison.Ordinal))
         {
-            throw new VirtualPathException("Virtual mounts must live at /workspace or /volumes/<name>.");
+            throw new VirtualPathException("Virtual mounts must live at /workspace, /tmp, or /volumes/<name>.");
         }
 
         return mount with
@@ -136,6 +146,21 @@ public sealed class VirtualFileSystem
             VirtualPath = virtualPath,
             HostPath = Path.GetFullPath(mount.HostPath),
         };
+    }
+
+    private static VirtualMount EnsureWritableTmpMount(VirtualMount mount)
+    {
+        try
+        {
+            Directory.CreateDirectory(mount.HostPath);
+            return mount;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            var fallback = Path.Combine(Path.GetTempPath(), "auxim", "vafs-tmp");
+            Directory.CreateDirectory(fallback);
+            return mount with { HostPath = Path.GetFullPath(fallback) };
+        }
     }
 
     private static string NormalizeVirtualPath(string path)
@@ -148,7 +173,7 @@ public sealed class VirtualFileSystem
         path = path.Replace('\\', '/').Trim();
         if (path.StartsWith('~') || HasWindowsDrivePrefix(path))
         {
-            throw new VirtualPathException("Use VAFS paths such as /workspace or /volumes/<name>.");
+            throw new VirtualPathException("Use VAFS paths such as /workspace, /tmp, or /volumes/<name>.");
         }
 
         var basePath = path.StartsWith('/') ? "" : "/workspace";

@@ -11,7 +11,7 @@ public static class SearchTools
         registry.Register(new ToolDefinition(
             "file.search",
             "files",
-            "Searches files under /workspace or mounted /volumes paths. Uses ripgrep when available.",
+            "Searches files under /workspace, /tmp, or mounted /volumes paths. Uses ripgrep when available.",
             async (args, cancellationToken) =>
             {
                 var vfs = FileTools.Vfs();

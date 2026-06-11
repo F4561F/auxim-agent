@@ -5,6 +5,7 @@ namespace Auxim.Core.Vafs;
 public sealed class VirtualFileSystemOptions
 {
     public string WorkspaceHostPath { get; init; } = Environment.CurrentDirectory;
+    public string TmpHostPath { get; init; } = Path.Combine(ConfigLoader.GetAuximHome(), "tmp");
     public IReadOnlyList<VirtualMount> Mounts { get; init; } = [];
 
     public static VirtualFileSystemOptions FromEnvironment()
@@ -14,10 +15,14 @@ public sealed class VirtualFileSystemOptions
             Environment.GetEnvironmentVariable("AUXIM_WORKSPACE"),
             config.Sandbox.Workspace,
             Environment.CurrentDirectory);
+        var tmp = FirstNonEmpty(
+            Environment.GetEnvironmentVariable("AUXIM_TMP"),
+            Path.Combine(ConfigLoader.GetAuximHome(), "tmp"));
 
         return new VirtualFileSystemOptions
         {
             WorkspaceHostPath = workspace,
+            TmpHostPath = tmp,
             Mounts = MergeMounts(
                 config.Sandbox.Mounts.Select(ToVirtualMount),
                 ParseMounts(Environment.GetEnvironmentVariable("AUXIM_VAFS_MOUNTS"))),

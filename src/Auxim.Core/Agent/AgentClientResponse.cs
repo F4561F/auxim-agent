@@ -14,3 +14,12 @@ public interface IToolCallingAgentClient : IAgentClient
         IReadOnlyList<Tools.ToolDefinition> tools,
         CancellationToken cancellationToken);
 }
+
+public interface IStreamingToolCallingAgentClient : IToolCallingAgentClient
+{
+    Task<AgentClientResponse> CompleteWithToolsStreamingAsync(
+        IReadOnlyList<AgentMessage> messages,
+        IReadOnlyList<Tools.ToolDefinition> tools,
+        Action<string> contentDeltaSink,
+        CancellationToken cancellationToken);
+}

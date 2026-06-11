@@ -10,7 +10,7 @@ public static class ShellTools
         registry.Register(new ToolDefinition(
             "shell.run",
             "shell",
-            "Runs a restricted auxim-shell command inside the virtual /workspace filesystem.",
+            "Runs a restricted auxim-shell command inside Auxim VAFS.",
             async (args, cancellationToken) =>
             {
                 if (!IsShellAllowed())
@@ -33,7 +33,7 @@ public static class ShellTools
         {
             ParametersSchema = FileTools.ObjectSchema(
                 [
-                    ("command", "string", "Restricted auxim-shell command to run. Paths must use /workspace or /volumes."),
+                    ("command", "string", "Restricted auxim-shell command to run. Paths must use /workspace, /tmp, or /volumes."),
                     ("timeoutSeconds", "integer", "Timeout in seconds, capped at 300."),
                 ],
                 ["command"]),
