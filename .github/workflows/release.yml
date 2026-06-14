@@ -1,0 +1,75 @@
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+            
+          - os: windows-latest
+            rid: win-x64
+          - os: windows-latest
+            rid: win-arm64
+            
+          - os: macos-15
+            rid: osx-arm64
+          - os: macos-15
+            rid: osx-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish CLI
+        shell: bash
+        run: |
+          dotnet publish src/Auxim.Cli/Auxim.Cli.csproj \
+            -c Release \
+            -r ${{ matrix.rid }} \
+            --self-contained true \
+            -o dist/auxim
+
+      - name: Package
+        run: |
+          cd dist
+          tar -czf auxim-${{ github.ref_name }}-${{ matrix.rid }}.tar.gz auxim
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auxim-${{ github.ref_name }}-${{ matrix.rid }}
+          path: dist/auxim-${{ github.ref_name }}-${{ matrix.rid }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "artifacts/**/*.tar.gz"

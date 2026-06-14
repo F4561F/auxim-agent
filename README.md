@@ -31,10 +31,10 @@ paths instead of exposing raw host filesystem details.
 
 ## Install
 
-Build and install a user-level `auxim` command:
+Build from source and install a user-level `auxim` command:
 
 ```bash
-./install-auxim.sh
+./build-install-auxim.sh
 ```
 
 The installer publishes `src/Auxim.Cli` to `dist/auxim`, links the
@@ -44,7 +44,22 @@ shell profile when it is not already on `PATH`.
 Override the install directory:
 
 ```bash
-AUXIM_INSTALL_DIR=/some/bin ./install-auxim.sh
+AUXIM_INSTALL_DIR=/some/bin ./build-install-auxim.sh
+```
+
+Install from the latest GitHub Release:
+
+```bash
+./install-online-auxim.sh
+```
+
+The online installer downloads a packaged release asset, extracts the published
+CLI, and places the `auxim` executable in `~/.local/bin` by default.
+
+Override the GitHub repository or install directory:
+
+```bash
+AUXIM_REPO=owner/repo AUXIM_INSTALL_DIR=/some/bin ./install-online-auxim.sh
 ```
 
 Remove the installed command and local Auxim state:
@@ -410,6 +425,35 @@ dotnet publish src/Auxim.Cli/Auxim.Cli.csproj \
   -o dist/auxim \
   --self-contained false \
   -p:UseAppHost=true
+```
+
+## GitHub Actions
+
+The repository includes two GitHub Actions workflows:
+
+```text
+.github/workflows/ci.yml
+  Runs restore, release build, and tests on Ubuntu, Windows, and macOS for
+  pushes and pull requests targeting main.
+
+.github/workflows/release.yml
+  Builds self-contained CLI packages when a tag matching v* is pushed, uploads
+  platform artifacts, and publishes them to a GitHub Release.
+```
+
+Current release artifacts:
+
+```text
+auxim-linux-x64.tar.gz
+auxim-win-x64.tar.gz
+auxim-osx-arm64.tar.gz
+```
+
+Create a release by pushing a version tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
 ## Configuration Paths
