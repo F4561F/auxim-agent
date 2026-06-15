@@ -1,9 +1,9 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Auxim.Core.Vafs;
+namespace Auxim.VAFS;
 
-public sealed class VirtualFileSystem
+public sealed class VirtualAgentFileSystem
 {
     private static readonly StringComparison PathComparison =
         OperatingSystem.IsWindows()
@@ -12,7 +12,7 @@ public sealed class VirtualFileSystem
 
     private readonly IReadOnlyList<VirtualMount> _mounts;
 
-    public VirtualFileSystem(VirtualFileSystemOptions options)
+    public VirtualAgentFileSystem(VirtualAgentFileSystemOptions options)
     {
         var tmpMount = NormalizeMount(new VirtualMount(
             "tmp",
@@ -41,8 +41,8 @@ public sealed class VirtualFileSystem
             .ToArray();
     }
 
-    public static VirtualFileSystem FromEnvironment() =>
-        new(VirtualFileSystemOptions.FromEnvironment());
+    public static VirtualAgentFileSystem FromEnvironment() =>
+        new(VirtualAgentFileSystemOptions.FromEnvironment());
 
     public IReadOnlyList<VirtualMount> ListMounts() => _mounts;
 
@@ -112,7 +112,7 @@ public sealed class VirtualFileSystem
     public string DescribeForAgent()
     {
         var builder = new StringBuilder();
-        builder.AppendLine("Available virtual filesystem mounts:");
+        builder.AppendLine("Available Virtual Agent File System mounts:");
         foreach (var mount in _mounts.OrderBy(mount => mount.VirtualPath, StringComparer.Ordinal))
         {
             builder.AppendLine($"- {mount.VirtualPath}{(mount.ReadOnly ? " (read-only)" : "")}");

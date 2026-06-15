@@ -1,4 +1,4 @@
-namespace Auxim.Core.Vafs;
+namespace Auxim.VAFS;
 
 public sealed record VirtualMount(
     string Name,

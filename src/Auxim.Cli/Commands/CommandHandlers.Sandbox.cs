@@ -1,5 +1,5 @@
 using Auxim.Core.Config;
-using Auxim.Core.Vafs;
+using Auxim.VAFS;
 
 namespace Auxim.Cli;
 
@@ -21,11 +21,11 @@ public static partial class CommandHandlers
     private static int ShowSandbox()
     {
         var config = ConfigLoader.Load();
-        var vfs = VirtualFileSystem.FromEnvironment();
+        var vafs = VirtualAgentFileSystem.FromEnvironment();
         Console.WriteLine("Auxim Sandbox");
         Console.WriteLine($"Config:    {ConfigLoader.GetConfigPath()}");
         Console.WriteLine($"Workspace: /workspace -> {WorkspaceHostPath(config)}");
-        Console.WriteLine($"Temp:      /tmp -> {vfs.ResolveToHostPath("/tmp")}");
+        Console.WriteLine($"Temp:      /tmp -> {vafs.ResolveToHostPath("/tmp")}");
         Console.WriteLine("Mounts:");
 
         var mounts = config.Sandbox.Mounts
@@ -44,7 +44,7 @@ public static partial class CommandHandlers
         }
 
         Console.WriteLine();
-        Console.WriteLine(vfs.DescribeForAgent());
+        Console.WriteLine(vafs.DescribeForAgent());
         return 0;
     }
 

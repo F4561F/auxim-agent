@@ -1,6 +1,6 @@
 using Auxim.Core.Config;
 using Auxim.Core.State;
-using Auxim.Core.Vafs;
+using Auxim.VAFS;
 using Auxim.Tools;
 
 namespace Auxim.Cli;
@@ -21,9 +21,9 @@ public static partial class CommandHandlers
         Console.WriteLine($"Base URL:    {config.Model.BaseUrl ?? "(default)"}");
         Console.WriteLine($"API key:     {FormatApiKeyStatus(config.Model.Provider, keyName)}");
         Console.WriteLine($"Tools:       {registry.List().Count}");
-        Console.WriteLine($"Workspace:   {VirtualFileSystem.FromEnvironment().ListMounts().First(mount => mount.Name == "workspace").VirtualPath}");
-        Console.WriteLine($"Mounts:      {VirtualFileSystem.FromEnvironment().ListMounts().Count - 1}");
-        Console.WriteLine($"Shell:       {(Environment.GetEnvironmentVariable("AUXIM_ALLOW_SHELL") == "true" ? "enabled" : "disabled")}");
+        Console.WriteLine($"Workspace:   {VirtualAgentFileSystem.FromEnvironment().ListMounts().First(mount => mount.Name == "workspace").VirtualPath}");
+        Console.WriteLine($"Mounts:      {VirtualAgentFileSystem.FromEnvironment().ListMounts().Count - 1}");
+        Console.WriteLine("Shell:       VAShell policy");
         Console.WriteLine($"Sessions:    {new SessionStore().List().Count}");
         Console.WriteLine($"Log file:    {Path.Combine(ConfigLoader.GetAuximHome(), "logs", "agent.log")}");
         return 0;

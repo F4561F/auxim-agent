@@ -1,5 +1,5 @@
 using Auxim.Core.Tools;
-using Auxim.Core.Vafs;
+using Auxim.VAFS;
 
 namespace Auxim.Tools;
 
@@ -13,7 +13,7 @@ public static class FileTools
             "Reads a UTF-8 text file under /workspace, /tmp, or mounted /volumes paths.",
             (args, _) =>
             {
-                var path = Vfs().ResolveToHostPath(Required(args, "path"));
+                var path = Vafs().ResolveToHostPath(Required(args, "path"));
                 return Task.FromResult(File.ReadAllText(path));
             })
         {
@@ -26,13 +26,13 @@ public static class FileTools
             "Writes UTF-8 text to a file under writable /workspace, /tmp, or mounted /volumes paths.",
             (args, _) =>
             {
-                var vfs = Vfs();
+                var vafs = Vafs();
                 var virtualPath = Required(args, "path");
-                var path = vfs.ResolveToHostPath(virtualPath, requireWritable: true);
+                var path = vafs.ResolveToHostPath(virtualPath, requireWritable: true);
                 var content = args.TryGetValue("content", out var value) ? value?.ToString() ?? "" : "";
                 Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
                 File.WriteAllText(path, content);
-                return Task.FromResult($"Wrote {content.Length} characters to {vfs.ToVirtualPath(path)}");
+                return Task.FromResult($"Wrote {content.Length} characters to {vafs.ToVirtualPath(path)}");
             })
         {
             ParametersSchema = ObjectSchema(
@@ -49,8 +49,8 @@ public static class FileTools
             "Replaces exact text in a file under writable /workspace, /tmp, or mounted /volumes paths.",
             (args, _) =>
             {
-                var vfs = Vfs();
-                var path = vfs.ResolveToHostPath(Required(args, "path"), requireWritable: true);
+                var vafs = Vafs();
+                var path = vafs.ResolveToHostPath(Required(args, "path"), requireWritable: true);
                 var oldText = Required(args, "oldText");
                 var newText = args.TryGetValue("newText", out var value) ? value?.ToString() ?? "" : "";
                 var content = File.ReadAllText(path);
@@ -67,7 +67,7 @@ public static class FileTools
                 }
 
                 File.WriteAllText(path, content.Replace(oldText, newText, StringComparison.Ordinal));
-                return Task.FromResult($"Patched {vfs.ToVirtualPath(path)}");
+                return Task.FromResult($"Patched {vafs.ToVirtualPath(path)}");
             })
         {
             ParametersSchema = ObjectSchema(
@@ -85,7 +85,7 @@ public static class FileTools
             "Lists files and directories under /workspace, /tmp, or mounted /volumes paths.",
             (args, _) =>
             {
-                var vfs = Vfs();
+                var vafs = Vafs();
                 var requestedPath = args.TryGetValue("path", out var value) ? value?.ToString() ?? "/workspace" : "/workspace";
                 if (requestedPath == "/")
                 {
@@ -96,18 +96,18 @@ public static class FileTools
                 {
                     return Task.FromResult(string.Join(
                         Environment.NewLine,
-                        vfs.ListMounts()
+                        vafs.ListMounts()
                             .Where(mount => mount.VirtualPath.StartsWith("/volumes/", StringComparison.Ordinal))
                             .OrderBy(mount => mount.VirtualPath)
                             .Select(mount => mount.VirtualPath + "/")));
                 }
 
-                var path = vfs.ResolveToHostPath(requestedPath);
+                var path = vafs.ResolveToHostPath(requestedPath);
                 var entries = Directory.EnumerateFileSystemEntries(path)
                     .OrderBy(entry => entry)
                     .Select(entry => Directory.Exists(entry)
-                        ? vfs.ToVirtualPath(entry) + "/"
-                        : vfs.ToVirtualPath(entry));
+                        ? vafs.ToVirtualPath(entry) + "/"
+                        : vafs.ToVirtualPath(entry));
                 return Task.FromResult(string.Join(Environment.NewLine, entries));
             })
         {
@@ -150,5 +150,5 @@ public static class FileTools
         };
     }
 
-    internal static VirtualFileSystem Vfs() => VirtualFileSystem.FromEnvironment();
+    internal static VirtualAgentFileSystem Vafs() => VirtualAgentFileSystem.FromEnvironment();
 }

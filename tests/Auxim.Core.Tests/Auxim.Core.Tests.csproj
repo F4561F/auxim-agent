@@ -5,5 +5,6 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
     <ProjectReference Include="..\..\src\Auxim.Core\Auxim.Core.csproj" />
     <ProjectReference Include="..\..\src\Auxim.Tools\Auxim.Tools.csproj" />
+    <ProjectReference Include="..\..\src\Auxim.VAFS\Auxim.VAFS.csproj" />
   </ItemGroup>
 </Project>

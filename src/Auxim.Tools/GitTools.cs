@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using Auxim.Core.Tools;
-using Auxim.Core.Vafs;
+using Auxim.VAFS;
 
 namespace Auxim.Tools;
 
@@ -32,11 +32,11 @@ public static class GitTools
 
     private static async Task<string> RunGitAsync(string[] args, CancellationToken cancellationToken)
     {
-        var vfs = FileTools.Vfs();
+        var vafs = FileTools.Vafs();
         var startInfo = new ProcessStartInfo
         {
             FileName = "git",
-            WorkingDirectory = vfs.ResolveToHostPath("/workspace"),
+            WorkingDirectory = vafs.ResolveToHostPath("/workspace"),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -52,6 +52,6 @@ public static class GitTools
         var stderr = await process.StandardError.ReadToEndAsync(cancellationToken);
         await process.WaitForExitAsync(cancellationToken);
         var output = string.IsNullOrWhiteSpace(stderr) ? stdout : $"{stdout}\nstderr:\n{stderr}";
-        return vfs.RewriteHostPathsToVirtual(output);
+        return vafs.RewriteHostPathsToVirtual(output);
     }
 }

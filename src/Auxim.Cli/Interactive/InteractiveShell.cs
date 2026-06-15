@@ -1,7 +1,7 @@
 using Auxim.Core.Agent;
 using Auxim.Core.Config;
 using Auxim.Core.State;
-using Auxim.Core.Utilities;
+using Auxim.VAFS;
 using Auxim.Cli.Services;
 using System.Text;
 
@@ -560,14 +560,13 @@ internal static class InteractiveShell
     {
         var config = ConfigLoader.Load();
         var session = new SessionStore().GetOrCreateCurrent();
-        var shellMode = Environment.GetEnvironmentVariable("AUXIM_ALLOW_SHELL") ?? "false";
         var screenMode = InteractiveScreen.IsAlternateScreenActive ? "alternate" : "inline";
         ConsoleTheme.Panel("Runtime", [
             ("model", $"{config.Model.Provider}/{config.Model.Name}"),
             ("session", $"{session.Id} ({session.Messages.Count} messages)"),
             ("workspace", config.Sandbox.Workspace ?? Environment.CurrentDirectory),
             ("mounts", config.Sandbox.Mounts.Count.ToString()),
-            ("agent shell", shellMode),
+            ("agent shell", "VAShell policy"),
             ("ui", screenMode),
             ("uptime", FormatDuration(DateTimeOffset.Now - StartedAt)),
         ]);

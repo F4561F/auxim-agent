@@ -2,7 +2,7 @@ using System.Text.Json;
 using Auxim.Core.Config;
 using Auxim.Core.State;
 using Auxim.Core.Approval;
-using Auxim.Core.Vafs;
+using Auxim.VAFS;
 using Auxim.Tools;
 
 namespace Auxim.Cli;

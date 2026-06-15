@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using Auxim.Core.Tools;
-using Auxim.Core.Vafs;
+using Auxim.VAFS;
 
 namespace Auxim.Tools;
 
@@ -14,10 +14,10 @@ public static class SearchTools
             "Searches files under /workspace, /tmp, or mounted /volumes paths. Uses ripgrep when available.",
             async (args, cancellationToken) =>
             {
-                var vfs = FileTools.Vfs();
+                var vafs = FileTools.Vafs();
                 var pattern = FileTools.Required(args, "pattern");
                 var path = args.TryGetValue("path", out var rawPath) ? rawPath?.ToString() ?? "/workspace" : "/workspace";
-                var hostPath = vfs.ResolveToHostPath(path);
+                var hostPath = vafs.ResolveToHostPath(path);
                 var maxResults = 100;
                 if (args.TryGetValue("maxResults", out var rawMax)
                     && int.TryParse(rawMax?.ToString(), out var parsedMax)
@@ -26,8 +26,8 @@ public static class SearchTools
                     maxResults = Math.Min(parsedMax, 500);
                 }
 
-                return await RunRipgrepAsync(vfs, pattern, hostPath, maxResults, cancellationToken)
-                    ?? FallbackSearch(vfs, pattern, hostPath, maxResults);
+                return await RunRipgrepAsync(vafs, pattern, hostPath, maxResults, cancellationToken)
+                    ?? FallbackSearch(vafs, pattern, hostPath, maxResults);
             })
         {
             ParametersSchema = FileTools.ObjectSchema(
@@ -41,7 +41,7 @@ public static class SearchTools
     }
 
     private static async Task<string?> RunRipgrepAsync(
-        VirtualFileSystem vfs,
+        VirtualAgentFileSystem vafs,
         string pattern,
         string hostPath,
         int maxResults,
@@ -55,7 +55,7 @@ public static class SearchTools
         var startInfo = new ProcessStartInfo
         {
             FileName = "rg",
-            WorkingDirectory = vfs.ResolveToHostPath("/workspace"),
+            WorkingDirectory = vafs.ResolveToHostPath("/workspace"),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -77,10 +77,10 @@ public static class SearchTools
 
         var stdout = await process.StandardOutput.ReadToEndAsync(cancellationToken);
         await process.WaitForExitAsync(cancellationToken);
-        return string.IsNullOrWhiteSpace(stdout) ? "No matches." : vfs.RewriteHostPathsToVirtual(stdout);
+        return string.IsNullOrWhiteSpace(stdout) ? "No matches." : vafs.RewriteHostPathsToVirtual(stdout);
     }
 
-    private static string FallbackSearch(VirtualFileSystem vfs, string pattern, string hostPath, int maxResults)
+    private static string FallbackSearch(VirtualAgentFileSystem vafs, string pattern, string hostPath, int maxResults)
     {
         var matches = new List<string>();
         foreach (var file in Directory.EnumerateFiles(hostPath, "*", SearchOption.AllDirectories))
@@ -96,7 +96,7 @@ public static class SearchTools
                 lineNumber++;
                 if (line.Contains(pattern, StringComparison.OrdinalIgnoreCase))
                 {
-                    matches.Add($"{vfs.ToVirtualPath(file)}:{lineNumber}:{line}");
+                    matches.Add($"{vafs.ToVirtualPath(file)}:{lineNumber}:{line}");
                     if (matches.Count >= maxResults)
                     {
                         return string.Join(Environment.NewLine, matches);

@@ -25,7 +25,7 @@ paths instead of exposing raw host filesystem details.
 - Persistent and revocable always-allowed tool approvals
 - VAFS, the Virtual Agent File System, with `/workspace`, `/tmp`, and mounted
   `/volumes/<name>` paths
-- Restricted `auxim-shell` for `shell.run`
+- Restricted VAShell, the Virtual Agent Shell, for `shell.run`
 - Runtime DLL plugin discovery from `./plugins` and `~/.auxim/plugins`
 - Placeholder `Gateway` project for future UI/platform integration
 
@@ -270,28 +270,48 @@ sandboxing for untrusted local code.
 
 ## Auxim Shell
 
-`shell.run` is disabled by default. Enable it explicitly:
+`shell.run` is always routed through VAShell, the Virtual Agent Shell, not
+`/bin/bash -lc`:
 
 ```bash
-AUXIM_ALLOW_SHELL=true auxim tool run shell.run command=pwd
+auxim tool run shell.run command=pwd
 ```
 
-When enabled, `shell.run` uses `auxim-shell`, not `/bin/bash -lc`.
+`ShellTools` is only the tool adapter that exposes `shell.run`; command
+execution is delegated to `Auxim.VAFS.VAShell`.
 
-Default allowed commands:
+Built-in commands:
 
 ```text
-pwd, ls, cat, head, tail, rg, git, dotnet
+pwd, echo, ls, cat, head, tail, wc, find, grep, stat, test
 ```
 
 The parser rejects shell operators, pipes, redirects, substitutions, and command
 chaining. Path arguments must use `/workspace`, `/tmp`, `/volumes/<name>`, or
 relative paths. Output paths are rewritten back to VAFS paths.
 
-Customize the allowlist:
+Built-in read commands support a small safe subset:
 
-```bash
-AUXIM_SHELL_COMMANDS="pwd,ls,rg,git,dotnet" auxim chat "run tests"
+```text
+ls [-a] [-l] [path ...]
+cat <path ...>
+head [-n count] <path ...>
+tail [-n count] <path ...>
+wc [-l|-w|-c] <path ...>
+find [path ...] [-maxdepth count] [-type f|d] [-name pattern]
+grep [-i] [-n] <text> <path ...>
+stat <path ...>
+test -e|-f|-d <path>
+```
+
+External commands are reviewed before execution and run without shell
+expansion. The current policy allows only low-risk command subsets:
+
+```text
+rg <pattern> [path ...]
+git status|diff|log|show|branch [...]
+dotnet --info|--version|--list-sdks|--list-runtimes
+dotnet build|test [...]
 ```
 
 ## Built-In Tools
@@ -373,8 +393,11 @@ src/Auxim.Core
   Plugins/     runtime plugin contract and DLL discovery
   State/       session storage
   Tools/       tool registry and definitions
-  Utilities/   shared utility code such as command tokenization
-  Vafs/        virtual filesystem mapping
+
+src/Auxim.VAFS
+  VAFS/        Virtual Agent File System mapping
+  VAShell/     Virtual Agent Shell implementation for VAFS paths
+  Utilities/   shared command tokenization
 
 src/Auxim.Cli
   Program.cs
@@ -384,7 +407,7 @@ src/Auxim.Cli
   Services/    reusable CLI services such as ChatRunner
 
 src/Auxim.Tools
-  Built-in tool implementations and restricted auxim-shell
+  Built-in tool implementations and shell.run adapter
 
 src/Auxim.Gateway
   Gateway shape and current console placeholder

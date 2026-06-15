@@ -1,1 +1,5 @@
-<Project Sdk="Microsoft.NET.Sdk" />
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Auxim.VAFS\Auxim.VAFS.csproj" />
+  </ItemGroup>
+</Project>

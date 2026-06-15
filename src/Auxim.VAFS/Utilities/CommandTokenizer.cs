@@ -1,7 +1,7 @@
-namespace Auxim.Core.Utilities;
+namespace Auxim.VAFS;
 
 /// <summary>
-/// Quote-aware command-line tokenizer shared by InteractiveShell and AuximShell.
+/// Quote-aware command-line tokenizer shared by InteractiveShell and VAShell.
 /// Splits on whitespace, respects single and double quotes.
 /// </summary>
 public static class CommandTokenizer
