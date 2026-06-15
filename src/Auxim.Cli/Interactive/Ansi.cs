@@ -8,7 +8,8 @@ internal static class Ansi
 
     public static bool ControlSequencesEnabled =>
         !Console.IsOutputRedirected
-        && !string.Equals(Environment.GetEnvironmentVariable("TERM"), "dumb", StringComparison.OrdinalIgnoreCase);
+        && !string.Equals(Environment.GetEnvironmentVariable("TERM"), "dumb", StringComparison.OrdinalIgnoreCase)
+        && (!OperatingSystem.IsWindows() || WindowsVirtualTerminalLikelyEnabled());
 
     public static string Bold(string text) => Wrap("1", text);
 
@@ -43,5 +44,15 @@ internal static class Ansi
     private static string Wrap(string code, string text)
     {
         return Enabled ? $"\u001b[{code}m{text}\u001b[0m" : text;
+    }
+
+    private static bool WindowsVirtualTerminalLikelyEnabled()
+    {
+        return !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WT_SESSION"))
+            || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TERM_PROGRAM"))
+            || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MSYSTEM"))
+            || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANSICON"))
+            || string.Equals(Environment.GetEnvironmentVariable("ConEmuANSI"), "ON", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(Environment.GetEnvironmentVariable("ConEmuANSI"), "1", StringComparison.OrdinalIgnoreCase);
     }
 }

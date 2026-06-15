@@ -84,8 +84,9 @@ internal sealed class LineEditor
                 case ConsoleKey.Backspace:
                     if (cursor > 0)
                     {
-                        buffer.Remove(cursor - 1, 1);
-                        cursor--;
+                        var previous = PreviousTextElementIndex(buffer.ToString(), cursor);
+                        buffer.Remove(previous, cursor - previous);
+                        cursor = previous;
                         Render(prompt, visiblePrompt, buffer, cursor);
                     }
 
@@ -93,7 +94,9 @@ internal sealed class LineEditor
                 case ConsoleKey.Delete:
                     if (cursor < buffer.Length)
                     {
-                        buffer.Remove(cursor, 1);
+                        var text = buffer.ToString();
+                        var next = NextTextElementIndex(text, cursor);
+                        buffer.Remove(cursor, next - cursor);
                         Render(prompt, visiblePrompt, buffer, cursor);
                     }
 
@@ -101,7 +104,7 @@ internal sealed class LineEditor
                 case ConsoleKey.LeftArrow:
                     if (cursor > 0)
                     {
-                        cursor--;
+                        cursor = PreviousTextElementIndex(buffer.ToString(), cursor);
                         Render(prompt, visiblePrompt, buffer, cursor);
                     }
 
@@ -109,7 +112,7 @@ internal sealed class LineEditor
                 case ConsoleKey.RightArrow:
                     if (cursor < buffer.Length)
                     {
-                        cursor++;
+                        cursor = NextTextElementIndex(buffer.ToString(), cursor);
                         Render(prompt, visiblePrompt, buffer, cursor);
                     }
 
@@ -193,10 +196,12 @@ internal sealed class LineEditor
         var text = buffer.ToString();
         var terminalWidth = TerminalWidth();
         var fullWidth = DisplayWidth(visiblePrompt) + DisplayWidth(text);
-        var newLines = Math.Max(1, (fullWidth + terminalWidth - 1) / terminalWidth);
 
         if (Ansi.ControlSequencesEnabled)
         {
+            var lines = WrapInput(prompt, visiblePrompt, text, terminalWidth);
+            var cursorPosition = CursorPosition(visiblePrompt, text[..cursor], terminalWidth);
+
             // Move cursor to start of previous render area
             // _lastCursorLine is the 0-based line within the previous block where the cursor sits
             if (_lastCursorLine > 0)
@@ -208,30 +213,23 @@ internal sealed class LineEditor
             // Clear from cursor to end of screen — clears all wrapped lines
             Console.Write("\u001b[0J");
 
-            Console.Write(prompt);
-            Console.Write(text);
+            WriteWrappedLines(lines);
 
-            // Compute cursor position within the newly rendered block
-            var cursorOffset = DisplayWidth(visiblePrompt) + DisplayWidth(text[..cursor]);
-            var cursorLine = cursorOffset / terminalWidth;
-            var cursorCol = cursorOffset % terminalWidth;
-
-            // Move cursor from end-of-text back to correct position
-            var linesFromEnd = newLines - 1 - cursorLine;
+            var linesFromEnd = lines.Count - 1 - cursorPosition.Line;
             if (linesFromEnd > 0)
             {
                 Console.Write($"\u001b[{linesFromEnd}A");
             }
 
             Console.Write("\r");
-            if (cursorCol > 0)
+            if (cursorPosition.Column > 0)
             {
-                Console.Write($"\u001b[{cursorCol}C");
+                Console.Write($"\u001b[{cursorPosition.Column}C");
             }
 
             _lastRenderWidth = fullWidth;
-            _lastRenderLines = newLines;
-            _lastCursorLine = cursorLine;
+            _lastRenderLines = lines.Count;
+            _lastCursorLine = cursorPosition.Line;
             return;
         }
 
@@ -252,6 +250,113 @@ internal sealed class LineEditor
         }
 
         _lastRenderWidth = fullWidth;
+    }
+
+    private static IReadOnlyList<string> WrapInput(
+        string prompt,
+        string visiblePrompt,
+        string text,
+        int terminalWidth)
+    {
+        var lines = new List<string>();
+        var current = new StringBuilder();
+        var currentWidth = 0;
+        AppendPrompt(lines, current, ref currentWidth, prompt, visiblePrompt, terminalWidth);
+        AppendText(lines, current, ref currentWidth, text, terminalWidth);
+        lines.Add(current.ToString());
+        return lines;
+    }
+
+    private static void AppendPrompt(
+        List<string> lines,
+        StringBuilder current,
+        ref int currentWidth,
+        string prompt,
+        string visiblePrompt,
+        int terminalWidth)
+    {
+        var promptWidth = DisplayWidth(visiblePrompt);
+        if (currentWidth > 0 && currentWidth + promptWidth > terminalWidth)
+        {
+            lines.Add(current.ToString());
+            current.Clear();
+            currentWidth = 0;
+        }
+
+        current.Append(prompt);
+        currentWidth += promptWidth;
+        if (currentWidth >= terminalWidth)
+        {
+            lines.Add(current.ToString());
+            current.Clear();
+            currentWidth = 0;
+        }
+    }
+
+    private static void AppendText(
+        List<string> lines,
+        StringBuilder current,
+        ref int currentWidth,
+        string text,
+        int terminalWidth)
+    {
+        foreach (var rune in text.EnumerateRunes())
+        {
+            var runeText = rune.ToString();
+            var width = RuneWidth(rune);
+            if (currentWidth > 0 && currentWidth + width > terminalWidth)
+            {
+                lines.Add(current.ToString());
+                current.Clear();
+                currentWidth = 0;
+            }
+
+            current.Append(runeText);
+            currentWidth += width;
+            if (currentWidth >= terminalWidth)
+            {
+                lines.Add(current.ToString());
+                current.Clear();
+                currentWidth = 0;
+            }
+        }
+    }
+
+    private static (int Line, int Column) CursorPosition(string visiblePrompt, string textBeforeCursor, int terminalWidth)
+    {
+        var line = 0;
+        var column = 0;
+        foreach (var rune in (visiblePrompt + textBeforeCursor).EnumerateRunes())
+        {
+            var width = RuneWidth(rune);
+            if (column > 0 && column + width > terminalWidth)
+            {
+                line++;
+                column = 0;
+            }
+
+            column += width;
+            if (column >= terminalWidth)
+            {
+                line++;
+                column = 0;
+            }
+        }
+
+        return (line, column);
+    }
+
+    private static void WriteWrappedLines(IReadOnlyList<string> lines)
+    {
+        for (var index = 0; index < lines.Count; index++)
+        {
+            if (index > 0)
+            {
+                Console.WriteLine();
+            }
+
+            Console.Write(lines[index]);
+        }
     }
 
     private void ResetRenderState()
@@ -282,6 +387,47 @@ internal sealed class LineEditor
         }
 
         return width;
+    }
+
+    private static int PreviousTextElementIndex(string text, int cursor)
+    {
+        if (cursor <= 0)
+        {
+            return 0;
+        }
+
+        var indexes = StringInfo.ParseCombiningCharacters(text);
+        var previous = 0;
+        foreach (var index in indexes)
+        {
+            if (index >= cursor)
+            {
+                break;
+            }
+
+            previous = index;
+        }
+
+        return previous;
+    }
+
+    private static int NextTextElementIndex(string text, int cursor)
+    {
+        if (cursor >= text.Length)
+        {
+            return text.Length;
+        }
+
+        var indexes = StringInfo.ParseCombiningCharacters(text);
+        foreach (var index in indexes)
+        {
+            if (index > cursor)
+            {
+                return index;
+            }
+        }
+
+        return text.Length;
     }
 
     private static int RuneWidth(Rune rune)

@@ -14,10 +14,10 @@ internal static class ConsoleTheme
     {
         Console.WriteLine();
         var width = Math.Min(ConsoleWidth(), MaxWidth);
-        Console.WriteLine(Ansi.Accent($"╭{new string('─', width - 2)}╮"));
+        Console.WriteLine(Ansi.Accent($"{TerminalGlyphs.TopLeft}{TerminalGlyphs.HorizontalLine(width - 2)}{TerminalGlyphs.TopRight}"));
         WriteBoxLines($"{Ansi.Bold(title.ToUpperInvariant())}  {Ansi.Muted(subtitle)}", width, Ansi.Accent);
         WriteBoxLines(Ansi.Muted("portable local agent for workspace automation"), width, Ansi.Accent);
-        Console.WriteLine(Ansi.Accent($"╰{new string('─', width - 2)}╯"));
+        Console.WriteLine(Ansi.Accent($"{TerminalGlyphs.BottomLeft}{TerminalGlyphs.HorizontalLine(width - 2)}{TerminalGlyphs.BottomRight}"));
     }
 
     public static void StatusBar(params (string Label, string Value)[] items)
@@ -47,7 +47,7 @@ internal static class ConsoleTheme
     public static void Section(string title)
     {
         Console.WriteLine();
-        WriteWrapped($"{Ansi.Cyan("▌")} {Ansi.Bold(title)}", ConsoleWidth());
+        WriteWrapped($"{Ansi.Cyan(TerminalGlyphs.Section)} {Ansi.Bold(title)}", ConsoleWidth());
     }
 
     public static void Pair(string label, string value)
@@ -63,7 +63,7 @@ internal static class ConsoleTheme
     public static void Panel(string title, IEnumerable<(string Label, string Value)> rows)
     {
         Console.WriteLine();
-        WriteWrapped($"{Ansi.Magenta("▌")} {Ansi.Bold(title)}", ConsoleWidth());
+        WriteWrapped($"{Ansi.Magenta(TerminalGlyphs.Section)} {Ansi.Bold(title)}", ConsoleWidth());
         var width = Math.Min(ConsoleWidth(), MaxWidth);
         var columns = width >= 88 ? 2 : 1;
         var materialized = rows.ToArray();
@@ -103,7 +103,7 @@ internal static class ConsoleTheme
         var split = columns == 2 ? (rows.Length + 1) / 2 : rows.Length;
         var innerWidth = width - 4;
 
-        Console.WriteLine($"  {Ansi.Muted($"╭{new string('─', innerWidth)}╮")}");
+        Console.WriteLine($"  {Ansi.Muted($"{TerminalGlyphs.TopLeft}{TerminalGlyphs.HorizontalLine(innerWidth)}{TerminalGlyphs.TopRight}")}");
         for (var index = 0; index < split; index++)
         {
             var cellWidth = columns == 2 ? 39 : Math.Max(8, innerWidth - 2);
@@ -112,7 +112,7 @@ internal static class ConsoleTheme
             {
                 foreach (var line in left)
                 {
-                    Console.WriteLine($"  {Ansi.Muted("│")} {line}{Ansi.Muted(" │")}");
+                    Console.WriteLine($"  {Ansi.Muted(TerminalGlyphs.Vertical)} {line}{Ansi.Muted($" {TerminalGlyphs.Vertical}")}");
                 }
 
                 continue;
@@ -126,10 +126,10 @@ internal static class ConsoleTheme
             {
                 var leftLine = rowIndex < left.Count ? left[rowIndex] : PadVisible("", cellWidth);
                 var rightLine = rowIndex < right.Count ? right[rowIndex] : PadVisible("", cellWidth);
-                Console.WriteLine($"  {Ansi.Muted("│")} {leftLine} {Ansi.Muted("│")} {rightLine} {Ansi.Muted("│")}");
+                Console.WriteLine($"  {Ansi.Muted(TerminalGlyphs.Vertical)} {leftLine} {Ansi.Muted(TerminalGlyphs.Vertical)} {rightLine} {Ansi.Muted(TerminalGlyphs.Vertical)}");
             }
         }
-        Console.WriteLine($"  {Ansi.Muted($"╰{new string('─', innerWidth)}╯")}");
+        Console.WriteLine($"  {Ansi.Muted($"{TerminalGlyphs.BottomLeft}{TerminalGlyphs.HorizontalLine(innerWidth)}{TerminalGlyphs.BottomRight}")}");
     }
 
     public static string Pill(string text) => Ansi.Reverse($" {text} ");
@@ -255,7 +255,9 @@ internal static class ConsoleTheme
             return visible[..1];
         }
 
-        return visible[..Math.Max(0, width - 1)] + "…";
+        var suffix = TerminalGlyphs.Ellipsis;
+        var prefixLength = Math.Max(0, width - suffix.Length);
+        return visible[..Math.Min(visible.Length, prefixLength)] + suffix;
     }
 
     public static IReadOnlyList<string> WrapVisible(string text, int width)
@@ -313,14 +315,14 @@ internal static class ConsoleTheme
     private static string BoxLine(string content, int width)
     {
         var available = width - 4;
-        return $"{Ansi.Accent("│")} {PadVisible(content, available)} {Ansi.Accent("│")}";
+        return $"{Ansi.Accent(TerminalGlyphs.Vertical)} {PadVisible(content, available)} {Ansi.Accent(TerminalGlyphs.Vertical)}";
     }
 
     private static void WriteBoxLines(string content, int width, Func<string, string> border)
     {
         foreach (var line in WrapVisible(content, width - 4))
         {
-            Console.WriteLine($"{border("│")} {PadVisible(line, width - 4)} {border("│")}");
+            Console.WriteLine($"{border(TerminalGlyphs.Vertical)} {PadVisible(line, width - 4)} {border(TerminalGlyphs.Vertical)}");
         }
     }
 

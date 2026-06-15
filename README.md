@@ -444,9 +444,9 @@ The repository includes two GitHub Actions workflows:
 Current release artifacts:
 
 ```text
-auxim-linux-x64.tar.gz
-auxim-win-x64.tar.gz
-auxim-osx-arm64.tar.gz
+auxim-v0.1.0-beta.1-linux-x64.tar.gz
+auxim-v0.1.0-beta.1-win-x64.tar.gz
+auxim-v0.1.0-beta.1-osx-arm64.tar.gz
 ```
 
 Create a release by pushing a version tag:

@@ -3,6 +3,8 @@ using Auxim.Cli.Interactive;
 using Auxim.Cli.Services;
 using Auxim.Tools;
 
+ConsoleHost.Configure();
+
 try
 {
     if (args.Length == 0)

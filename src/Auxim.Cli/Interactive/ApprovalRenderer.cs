@@ -14,7 +14,7 @@ internal static class ApprovalRenderer
         var width = Math.Max(20, Math.Min(ConsoleTheme.ConsoleWidth(), 96));
 
         Console.WriteLine();
-        Console.WriteLine(Ansi.Warning($"╭{new string('─', width - 2)}╮"));
+        Console.WriteLine(Ansi.Warning($"{TerminalGlyphs.TopLeft}{TerminalGlyphs.HorizontalLine(width - 2)}{TerminalGlyphs.TopRight}"));
         WriteBoxLines(
             $"{Ansi.Bold("SAFETY REVIEW")}  {Ansi.Muted("Tool approval required")}",
             width);
@@ -24,15 +24,15 @@ internal static class ApprovalRenderer
         WriteBoxLines(
             $"{Ansi.Muted("risk")}  This tool can modify files, run commands, or change state.",
             width);
-        Console.WriteLine(Ansi.Warning($"├{new string('─', width - 2)}┤"));
-        WriteBoxLines($"{Ansi.Cyan("▌")} {Ansi.Bold("Arguments")}", width);
+        Console.WriteLine(Ansi.Warning($"{TerminalGlyphs.TeeLeft}{TerminalGlyphs.HorizontalLine(width - 2)}{TerminalGlyphs.TeeRight}"));
+        WriteBoxLines($"{Ansi.Cyan(TerminalGlyphs.Section)} {Ansi.Bold("Arguments")}", width);
         foreach (var arg in FormatArgumentsForDisplay(arguments))
         {
             WriteBoxLines($"  {Ansi.Muted(arg.Key.PadRight(14))} {arg.Value}", width);
         }
 
-        Console.WriteLine(Ansi.Warning($"├{new string('─', width - 2)}┤"));
-        WriteBoxLines($"{Ansi.Cyan("▌")} {Ansi.Bold("Decision")}", width);
+        Console.WriteLine(Ansi.Warning($"{TerminalGlyphs.TeeLeft}{TerminalGlyphs.HorizontalLine(width - 2)}{TerminalGlyphs.TeeRight}"));
+        WriteBoxLines($"{Ansi.Cyan(TerminalGlyphs.Section)} {Ansi.Bold("Decision")}", width);
         var options = new[]
         {
             (Label: "Allow once", Tone: "success", Value: 1),
@@ -45,7 +45,7 @@ internal static class ApprovalRenderer
 
         RenderOptions(options, selected, width);
         RenderHint(width);
-        Console.WriteLine(Ansi.Warning($"╰{new string('─', width - 2)}╯"));
+        Console.WriteLine(Ansi.Warning($"{TerminalGlyphs.BottomLeft}{TerminalGlyphs.HorizontalLine(width - 2)}{TerminalGlyphs.BottomRight}"));
 
         while (true)
         {
@@ -145,7 +145,7 @@ internal static class ApprovalRenderer
         ClearOptionsBlock(options.Length, optionsTop);
         RenderOptions(options, selected, width);
         RenderHint(width);
-        Console.WriteLine(Ansi.Warning($"╰{new string('─', width - 2)}╯"));
+        Console.WriteLine(Ansi.Warning($"{TerminalGlyphs.BottomLeft}{TerminalGlyphs.HorizontalLine(width - 2)}{TerminalGlyphs.BottomRight}"));
     }
 
     private static void ClearOptionsBlock(int optionCount, int optionsTop)
@@ -200,7 +200,7 @@ internal static class ApprovalRenderer
         var fitted = ConsoleTheme.FitVisible(content, available);
         var visible = StripAnsi(fitted);
         var padded = visible.Length >= available ? fitted : fitted + new string(' ', available - visible.Length);
-        return $"{Ansi.Warning("│")} {padded} {Ansi.Warning("│")}";
+        return $"{Ansi.Warning(TerminalGlyphs.Vertical)} {padded} {Ansi.Warning(TerminalGlyphs.Vertical)}";
     }
 
     private static void WriteBoxLines(string content, int width)
