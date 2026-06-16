@@ -12,26 +12,46 @@ Auxim.Core
   Config/     ~/.auxim config and .env loading
   Logging/    Local agent log helpers
   Plugins/    IAuximPlugin contract and DLL discovery
+  Runtime/    IAuximRuntime, request/result types, runtime orchestration
   State/      Current session pointer and JSON session documents
   Tools/      ToolDefinition and ToolRegistry
-  Vafs/       Virtual Agent File System path mapping
+
+Auxim.VAFS
+  VAFS/       Virtual Agent File System path mapping
+  VAShell/    Virtual Agent Shell for controlled command execution
+  Utilities/  Shared command tokenization
 
 Auxim.Cli
-  Command-line host for chat, model setup, auth, config, sessions, tools,
-  approvals, and diagnostics
+  Terminal frontend for chat, model setup, auth, config, sessions, tools,
+  approvals, diagnostics, and the interactive dashboard
 
 Auxim.Gateway
-  Messaging gateway host with per-platform adapters. The console adapter is
-  currently a placeholder.
+  Future platform gateway host with per-platform adapters. The console adapter
+  is currently a placeholder.
 
 Auxim.Tools
   Built-in tool registrations for files, search, git, web fetch, shell, todo,
-  echo, and time
+  echo, and time. Shell execution is delegated to Auxim.VAFS.VAShell.
 ```
+
+The intended dependency direction is:
+
+```text
+Auxim.Cli ───────┐
+                   ├──> Auxim.Core.Runtime.IAuximRuntime
+Auxim.Gateway ───┘          │
+                              ├──> Auxim.Core.Agent/State/Config/Approval
+                              ├──> Auxim.Tools
+                              └──> Auxim.VAFS
+```
+
+CLI and Gateway should behave like frontends. They should not reimplement agent
+or session orchestration; they should call `IAuximRuntime`.
 
 ## Runtime Flow
 
-`auxim chat <message>` loads `~/.auxim/config.json`, reads API keys from
+`auxim chat <message>` is a CLI frontend operation. It delegates to
+`IAuximRuntime`, which loads `~/.auxim/config.json`, reads API keys from
 `~/.auxim/.env`, opens or creates the current session, creates the default
 tool registry, and runs `AuximAgent`.
 
@@ -50,8 +70,9 @@ Auxim currently has two model client paths:
   `/chat/completions` endpoints, including tool call serialization.
 
 The CLI provider picker stores a provider id, model id, and base URL in config.
-Provider-specific API key names are resolved by the CLI; shell environment
-variables can override config for one-off runs.
+Provider-specific API key names live in `ProviderCatalog`, and
+`DefaultAgentClientFactory` creates the default model client for runtime users.
+Shell environment variables can override config for one-off runs.
 
 ## Tools and Approval
 
@@ -102,15 +123,12 @@ a mount are rejected.
 
 ## Auxim Shell
 
-`shell.run` uses a restricted `auxim-shell` implementation instead of passing
-commands to `/bin/bash -lc`. It is still disabled unless
-`AUXIM_ALLOW_SHELL=true` is set.
-
-The shell parser rejects pipes, redirects, shell substitutions, and command
-chaining. The default command allowlist is `pwd`, `ls`, `cat`, `head`, `tail`,
-`rg`, `git`, and `dotnet`; it can be overridden with `AUXIM_SHELL_COMMANDS`.
-Path arguments are resolved through VAFS and output is rewritten to virtual
-paths.
+`shell.run` uses VAShell from `Auxim.VAFS` instead of passing commands to
+`/bin/bash -lc`. The shell parser rejects pipes, redirects, shell
+substitutions, and command chaining. Built-in commands operate on VAFS paths,
+and approved external command subsets such as `rg`, safe `git` reads, and
+selected `dotnet` commands are planned before execution. Path arguments are
+resolved through VAFS and output is rewritten to virtual paths.
 
 ## State
 
@@ -135,6 +153,7 @@ assembly.
 
 - The gateway has only a console placeholder adapter.
 - Skills are reserved in the repository layout but not implemented yet.
-- Provider metadata is currently kept in the CLI picker instead of a dedicated
-  provider registry.
-- Tests are minimal and currently cover only basic tool invocation.
+- The CLI provider picker still owns the interactive provider/model menu, while
+  shared API-key naming lives in Core.
+- Runtime streaming is callback-based today; a future Gateway may want an async
+  event stream API over the same runtime boundary.

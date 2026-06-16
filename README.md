@@ -1,5 +1,7 @@
 # Auxim
 
+[点击跳转到中文说明](docs/README.zh-CN.md)
+
 Auxim is a portable C#/.NET AI agent for local workspaces. It provides an
 OpenAI-compatible model client, tool calling, local sessions, an interactive
 terminal interface, runtime plugins, and a virtual filesystem boundary that
@@ -391,6 +393,7 @@ src/Auxim.Core
   Config/      ~/.auxim config and .env support
   Logging/     local logs
   Plugins/     runtime plugin contract and DLL discovery
+  Runtime/     IAuximRuntime and default chat orchestration service
   State/       session storage
   Tools/       tool registry and definitions
 
@@ -401,10 +404,9 @@ src/Auxim.VAFS
 
 src/Auxim.Cli
   Program.cs
-  AgentClientFactory.cs
   Commands/    CLI command handlers split by domain
   Interactive/ dashboard, prompt editor, history view, approval UI, input policy
-  Services/    reusable CLI services such as ChatRunner
+  Services/    terminal-facing services such as ChatRunner
 
 src/Auxim.Tools
   Built-in tool implementations and shell.run adapter
@@ -421,6 +423,13 @@ skills/
 tests/
   xUnit tests for core behavior and VAFS
 ```
+
+At a high level, `Auxim.Core` is the kernel-like runtime layer,
+`IAuximRuntime` is the stable application boundary used by frontends,
+`Auxim.Cli` is the terminal frontend, `Auxim.Gateway` is the future
+HTTP/WebSocket/platform frontend, `Auxim.Tools` contains built-in
+capabilities, and `Auxim.VAFS` provides the virtual filesystem and controlled
+agent shell. See `docs/development-architecture.md` for contributor guidance.
 
 ## Development
 
