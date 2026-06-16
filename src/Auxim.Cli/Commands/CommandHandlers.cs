@@ -240,21 +240,12 @@ public static partial class CommandHandlers
 
     public static string ApiKeyNameForProvider(string provider)
     {
-        var found = ProviderChoices.FirstOrDefault(choice =>
-            string.Equals(choice.Id, provider, StringComparison.OrdinalIgnoreCase));
-        if (found is not null && !string.IsNullOrWhiteSpace(found.ApiKeyEnv))
-        {
-            return found.ApiKeyEnv;
-        }
-
-        return "AUXIM_API_KEY";
+        return ProviderCatalog.ApiKeyNameForProvider(provider);
     }
 
     public static bool RequiresApiKey(string provider)
     {
-        var found = ProviderChoices.FirstOrDefault(choice =>
-            string.Equals(choice.Id, provider, StringComparison.OrdinalIgnoreCase));
-        return found is null || !string.IsNullOrWhiteSpace(found.ApiKeyEnv);
+        return ProviderCatalog.RequiresApiKey(provider);
     }
 
     private static string FormatApiKeyStatus(string provider, string keyName)
