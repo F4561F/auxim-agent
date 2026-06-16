@@ -4,7 +4,7 @@ set -euo pipefail
 # =========================
 # Config
 # =========================
-REPO="${AUXIM_REPO:-F4561F/auxim}"
+REPO="${AUXIM_REPO:-F4561F/auxim-agent}"
 INSTALL_DIR="${AUXIM_INSTALL_DIR:-$HOME/.local/bin}"
 BIN="$INSTALL_DIR/auxim"
 
@@ -58,7 +58,7 @@ case "$OS" in
     ;;
 esac
 
-ASSET="auxim-${LATEST}-${RID}.tar.gz"
+ASSET="auxim-agent-${LATEST}-${RID}.tar.gz"
 URL="https://github.com/$REPO/releases/download/$LATEST/$ASSET"
 
 echo "==> Downloading: $ASSET"

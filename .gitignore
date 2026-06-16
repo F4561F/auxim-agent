@@ -2,43 +2,107 @@
 bin/
 obj/
 dist/
+out/
+publish/
+artifacts/
 TestResults/
+*.trx
+*.testlog
 coverage/
 coverage.xml
 *.coverage
 *.coveragexml
+*.lcov
+lcov.info
 
 # Local published app symlink/binary
 /auxim
+/auxim.exe
+*.tar.gz
+*.zip
+*.7z
 
 # User secrets and local Auxim state
 .env
 .env.*
 !.env.example
+.envrc
+.env.local
+.env.*.local
 .auxim/
 config.local.json
+*.local.json
+*.secret.json
+secrets.json
 approvals.json
 todos.json
 current_session
 sessions/
 logs/
+*.log
+*.db
+*.sqlite
+*.sqlite3
 
-# .NET and IDE state
+# .NET and NuGet
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+project.assets.json
+*.nuget.g.props
+*.nuget.g.targets
+*.nuget.dgspec.json
+
+# Visual Studio
+.vs/
 *.user
 *.suo
 *.userosscache
 *.sln.docstates
-.vs/
-.vscode/
+
+# JetBrains Rider
 .idea/
+*.DotSettings.user
+
+# VS Code
+.vscode/
+
+# Vim/Emacs/editor swap files
 *.swp
 *.swo
+*.swn
+\#*\#
+.\#*
 
-# NuGet
-*.nupkg
-*.snupkg
-packages/
+# Local runtime plugin binaries
+plugins/**/*.dll
+plugins/**/*.pdb
+plugins/**/*.so
+plugins/**/*.dylib
 
-# OS files
+# macOS files
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows files
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux desktop files
+.directory
+
+# Crash dumps and temporary files
+*.dmp
+*.dump
+*.core
+*.tmp
+*.temp
+*.bak
+*.orig
+*~

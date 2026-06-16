@@ -1,7 +1,6 @@
 # Auxim Architecture
 
-Auxim is built around C#/.NET primitives for local agent workflows. The
-The main
+Auxim is built around C#/.NET primitives for local agent workflows. The main
 extension points are already in place: model clients, a tool registry, local
 session state, tool approval, and runtime plugin loading.
 

@@ -51,13 +51,13 @@ jobs:
       - name: Package
         run: |
           cd dist
-          tar -czf auxim-${{ github.ref_name }}-${{ matrix.rid }}.tar.gz auxim
+          tar -czf auxim-agent-${{ github.ref_name }}-${{ matrix.rid }}.tar.gz auxim
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: auxim-${{ github.ref_name }}-${{ matrix.rid }}
-          path: dist/auxim-${{ github.ref_name }}-${{ matrix.rid }}.tar.gz
+          name: auxim-agent-${{ github.ref_name }}-${{ matrix.rid }}
+          path: dist/auxim-agent-${{ github.ref_name }}-${{ matrix.rid }}.tar.gz
 
   release:
     needs: build
