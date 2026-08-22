@@ -4,24 +4,31 @@ namespace Auxim.Core.Logging;
 
 public static class AuximLog
 {
-    public static void Info(string message)
+    private static readonly object WriteGate = new();
+
+    public static void Info(string message, string? homeDirectory = null)
     {
-        Write("INFO", message);
+        Write("INFO", message, homeDirectory);
     }
 
-    public static void Warning(string message)
+    public static void Warning(string message, string? homeDirectory = null)
     {
-        Write("WARN", message);
+        Write("WARN", message, homeDirectory);
     }
 
-    private static void Write(string level, string message)
+    private static void Write(string level, string message, string? homeDirectory)
     {
         try
         {
-            var logDir = Path.Combine(ConfigLoader.GetAuximHome(), "logs");
-            Directory.CreateDirectory(logDir);
-            var line = $"{DateTimeOffset.Now:O} [{level}] {message}{Environment.NewLine}";
-            File.AppendAllText(Path.Combine(logDir, "agent.log"), line);
+            lock (WriteGate)
+            {
+                var logDir = Path.Combine(
+                    homeDirectory ?? ConfigLoader.GetAuximHome(),
+                    "logs");
+                Directory.CreateDirectory(logDir);
+                var line = $"{DateTimeOffset.Now:O} [{level}] {message}{Environment.NewLine}";
+                File.AppendAllText(Path.Combine(logDir, "agent.log"), line);
+            }
         }
         catch
         {

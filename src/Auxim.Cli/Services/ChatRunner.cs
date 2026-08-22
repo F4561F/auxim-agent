@@ -1,26 +1,20 @@
 using Auxim.Core.Agent;
 using Auxim.Core.Runtime;
 using Auxim.Cli.Interactive;
-using Auxim.Tools;
 
 namespace Auxim.Cli.Services;
 
 public sealed class ChatRunner
 {
     private readonly IAuximRuntime _runtime;
-    private readonly Action<ToolEvent>? _toolEventSink;
-    private readonly Action<string>? _contentDeltaSink;
+    private readonly IRuntimeEventSink? _eventSink;
 
     public ChatRunner(
-        Action<ToolEvent>? toolEventSink = null,
-        Action<string>? contentDeltaSink = null,
-        IAuximRuntime? runtime = null)
+        IAuximRuntime runtime,
+        IRuntimeEventSink? eventSink = null)
     {
-        _runtime = runtime ?? new AuximRuntimeService(
-            DefaultAgentClientFactory.Create,
-            BuiltInTools.CreateDefaultRegistry);
-        _toolEventSink = toolEventSink;
-        _contentDeltaSink = contentDeltaSink;
+        _runtime = runtime;
+        _eventSink = eventSink;
     }
 
     public async Task<AgentResult> RunAsync(string prompt, CancellationToken cancellationToken = default)
@@ -29,9 +23,8 @@ public sealed class ChatRunner
             new AuximChatRequest(prompt),
             new AuximRuntimeOptions
         {
-            ToolEventSink = _toolEventSink,
-            ContentDeltaSink = _contentDeltaSink,
-            ApprovalPrompt = ApprovalRenderer.Prompt,
+            EventSink = _eventSink,
+            ApprovalHandler = new CliApprovalHandler(),
         },
             cancellationToken);
         return result.ToAgentResult();

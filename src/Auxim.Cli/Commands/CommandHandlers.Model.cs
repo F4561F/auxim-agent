@@ -1,34 +1,32 @@
-using Auxim.Core.Config;
+using Auxim.Core.Runtime;
 
 namespace Auxim.Cli;
 
 public static partial class CommandHandlers
 {
-    public static int HandleModel(IReadOnlyList<string> args)
+    public static int HandleModel(IReadOnlyList<string> args, IAuximRuntime runtime)
     {
         var subcommand = args.FirstOrDefault() ?? "show";
         return subcommand switch
         {
-            "show" => ShowModel(),
-            "set" => SetModel(args.Skip(1).ToArray()),
+            "show" => ShowModel(runtime),
+            "set" => SetModel(args.Skip(1).ToArray(), runtime),
             _ => PrintModelHelp(),
         };
     }
 
-    private static int ShowModel()
+    private static int ShowModel(IAuximRuntime runtime)
     {
-        var config = ConfigLoader.Load();
-        Console.WriteLine($"Provider: {config.Model.Provider}");
-        Console.WriteLine($"Model:    {config.Model.Name}");
-        Console.WriteLine($"Base URL: {config.Model.BaseUrl ?? "(default)"}");
+        var model = runtime.GetModelSettings();
+        PrintModel(model);
         return 0;
     }
 
-    private static int SetModel(IReadOnlyList<string> args)
+    private static int SetModel(IReadOnlyList<string> args, IAuximRuntime runtime)
     {
         if (args.Count == 0)
         {
-            return SetModelInteractive();
+            return SetModelInteractive(runtime);
         }
 
         if (args.Count < 2)
@@ -36,112 +34,81 @@ public static partial class CommandHandlers
             return PrintModelHelp();
         }
 
-        var config = ConfigLoader.Load();
-        var provider = args[0];
-        var model = args[1];
-        var baseUrl = args.Count >= 3 ? args[2] : config.Model.BaseUrl;
-
-        var updated = new AuximConfig
-        {
-            Model = new ModelConfig
-            {
-                Provider = provider,
-                Name = model,
-                BaseUrl = string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl.TrimEnd('/'),
-            },
-            Agent = config.Agent,
-            Display = config.Display,
-            Sandbox = config.Sandbox,
-        };
-
-        ConfigLoader.Save(updated);
-        Console.WriteLine($"Model saved to {ConfigLoader.GetConfigPath()}");
-        Console.WriteLine($"Provider: {updated.Model.Provider}");
-        Console.WriteLine($"Model:    {updated.Model.Name}");
-        Console.WriteLine($"Base URL: {updated.Model.BaseUrl ?? "(default)"}");
+        var current = runtime.GetModelSettings();
+        var updated = runtime.SetModelSettings(
+            args[0],
+            args[1],
+            args.Count >= 3 ? args[2] : current.BaseUrl);
+        Console.WriteLine($"Model saved to {updated.ConfigPath}");
+        PrintModel(updated);
         return 0;
     }
 
-    private static int SetModelInteractive()
+    private static int SetModelInteractive(IAuximRuntime runtime)
     {
-        var config = ConfigLoader.Load();
-        var currentProvider = config.Model.Provider;
-        var currentModel = config.Model.Name;
-        var currentBaseUrl = config.Model.BaseUrl;
-
+        var current = runtime.GetModelSettings();
         PrintPanel(
             "Auxim Model Setup",
             [
-                $"Config: {ConfigLoader.GetConfigPath()}",
-                $"Secrets: {ConfigLoader.GetEnvPath()}",
+                $"Config: {current.ConfigPath}",
+                $"Secrets: {current.SecretsPath}",
                 "",
-                $"Current provider: {currentProvider}",
-                $"Current model:    {currentModel}",
-                $"Current base URL: {config.Model.BaseUrl ?? "(default)"}",
+                $"Current provider: {current.Provider}",
+                $"Current model:    {current.Model}",
+                $"Current base URL: {current.BaseUrl ?? "(default)"}",
             ]);
 
-        var selectedProvider = SelectProvider(currentProvider);
-        var provider = selectedProvider.Id;
-        var model = SelectModel(selectedProvider, currentModel);
-        if (string.IsNullOrWhiteSpace(model))
+        var selectedProvider = SelectProvider(current.Provider);
+        var modelName = SelectModel(selectedProvider, current.Model);
+        if (string.IsNullOrWhiteSpace(modelName))
         {
             Console.Error.WriteLine("Model is required.");
             return 1;
         }
 
-        var defaultBaseUrl = selectedProvider.BaseUrl;
-        if (!string.IsNullOrWhiteSpace(currentBaseUrl)
-            && string.Equals(provider, currentProvider, StringComparison.OrdinalIgnoreCase))
-        {
-            defaultBaseUrl = currentBaseUrl;
-        }
-
+        var defaultBaseUrl = !string.IsNullOrWhiteSpace(current.BaseUrl)
+            && string.Equals(selectedProvider.Id, current.Provider, StringComparison.OrdinalIgnoreCase)
+                ? current.BaseUrl
+                : selectedProvider.BaseUrl;
         var baseUrl = selectedProvider.IsCustom
             ? defaultBaseUrl
             : PromptWithDefault("Base URL", defaultBaseUrl);
-        var updated = new AuximConfig
-        {
-            Model = new ModelConfig
-            {
-                Provider = provider,
-                Name = model,
-                BaseUrl = string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl.TrimEnd('/'),
-            },
-            Agent = config.Agent,
-            Display = config.Display,
-            Sandbox = config.Sandbox,
-        };
-
-        ConfigLoader.Save(updated);
+        var updated = runtime.SetModelSettings(selectedProvider.Id, modelName, baseUrl);
         Console.WriteLine();
-        Console.WriteLine($"Model saved to {ConfigLoader.GetConfigPath()}");
+        Console.WriteLine($"Model saved to {updated.ConfigPath}");
 
-        var keyName = ApiKeyNameForProvider(provider);
-        var hasKey = !RequiresApiKey(provider)
-            || DotEnvStore.HasValue(keyName)
-            || DotEnvStore.HasValue("AUXIM_API_KEY");
-        if (RequiresApiKey(provider) && !hasKey && IsYes(PromptWithDefault("Save API key now?", "yes")))
+        var credential = runtime.GetCredentialStatus(updated.Provider);
+        if (credential.Required
+            && !credential.Configured
+            && IsYes(PromptWithDefault("Save API key now?", "yes")))
         {
-            var key = ReadSecret($"{keyName}: ");
+            var key = ReadSecret($"{credential.EnvironmentVariable}: ");
             if (!string.IsNullOrWhiteSpace(key))
             {
-                DotEnvStore.SetValue(keyName, key);
-                Console.WriteLine($"API key saved to {ConfigLoader.GetEnvPath()}");
+                runtime.SetApiKey(updated.Provider, key);
+                credential = runtime.GetCredentialStatus(updated.Provider);
+                Console.WriteLine($"API key saved to {credential.SecretsPath}");
             }
         }
 
         PrintPanel(
             "Saved",
             [
-                $"Provider: {updated.Model.Provider}",
-                $"Model:    {updated.Model.Name}",
-                $"Base URL: {updated.Model.BaseUrl ?? "(default)"}",
-                $"API key:  {FormatApiKeyStatus(provider, keyName)}",
+                $"Provider: {updated.Provider}",
+                $"Model:    {updated.Model}",
+                $"Base URL: {updated.BaseUrl ?? "(default)"}",
+                $"API key:  {FormatApiKeyStatus(credential)}",
                 "",
                 "Try: ./auxim chat \"hello\"",
             ]);
-
         return 0;
+    }
+
+    private static void PrintModel(AuximModelSettings model)
+    {
+        Console.WriteLine($"Provider: {model.Provider}");
+        Console.WriteLine($"Model:    {model.Model}");
+        Console.WriteLine($"Base URL: {model.BaseUrl ?? "(default)"}");
     }
 
     private static int PrintModelHelp()

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Auxim.Core.Tools;
+using Auxim.Core.Resources;
 using Auxim.VAFS;
 
 namespace Auxim.Tools;
@@ -37,6 +38,13 @@ public static class SearchTools
                     ("maxResults", "integer", "Maximum results to return."),
                 ],
                 ["pattern"]),
+            ResourceAccessResolver = args =>
+            {
+                var path = args.TryGetValue("path", out var value)
+                    ? value?.ToString() ?? "/workspace"
+                    : "/workspace";
+                return [new ResourceAccess(ResourceAction.Read, ResourceUri.Vafs(path))];
+            },
         });
     }
 

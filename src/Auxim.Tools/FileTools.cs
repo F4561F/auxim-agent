@@ -1,4 +1,5 @@
 using Auxim.Core.Tools;
+using Auxim.Core.Resources;
 using Auxim.VAFS;
 
 namespace Auxim.Tools;
@@ -18,6 +19,8 @@ public static class FileTools
             })
         {
             ParametersSchema = ObjectSchema([("path", "string", "Virtual file path to read, such as /workspace/README.md.")], ["path"]),
+            ResourceAccessResolver = args =>
+                [new ResourceAccess(ResourceAction.Read, ResourceUri.Vafs(Required(args, "path")))],
         });
 
         registry.Register(new ToolDefinition(
@@ -41,6 +44,8 @@ public static class FileTools
                     ("content", "string", "Text content to write."),
                 ],
                 ["path", "content"]),
+            ResourceAccessResolver = args =>
+                [new ResourceAccess(ResourceAction.Write, ResourceUri.Vafs(Required(args, "path")), RequiresApproval: true)],
         });
 
         registry.Register(new ToolDefinition(
@@ -77,6 +82,8 @@ public static class FileTools
                     ("newText", "string", "Replacement text."),
                 ],
                 ["path", "oldText", "newText"]),
+            ResourceAccessResolver = args =>
+                [new ResourceAccess(ResourceAction.Write, ResourceUri.Vafs(Required(args, "path")), RequiresApproval: true)],
         });
 
         registry.Register(new ToolDefinition(
@@ -112,6 +119,13 @@ public static class FileTools
             })
         {
             ParametersSchema = ObjectSchema(("path", "string", "Virtual directory path to list. Defaults to /workspace.")),
+            ResourceAccessResolver = args =>
+            {
+                var path = args.TryGetValue("path", out var value)
+                    ? value?.ToString() ?? "/workspace"
+                    : "/workspace";
+                return [new ResourceAccess(ResourceAction.Read, ResourceUri.Vafs(path))];
+            },
         });
     }
 

@@ -101,6 +101,7 @@ $RECYCLE.BIN/
 *.dmp
 *.dump
 *.core
+!src/Auxim.Core/
 *.tmp
 *.temp
 *.bak

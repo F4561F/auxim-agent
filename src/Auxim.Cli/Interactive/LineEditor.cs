@@ -22,7 +22,11 @@ internal sealed class LineEditor
         _scrollHandler = scrollHandler;
     }
 
-    public string? ReadLine(string prompt, string visiblePrompt, Func<bool>? escapeReturnsImmediately = null)
+    public string? ReadLine(
+        string prompt,
+        string visiblePrompt,
+        Func<bool>? escapeReturnsImmediately = null,
+        bool scrollNavigation = false)
     {
         if (Console.IsInputRedirected)
         {
@@ -34,7 +38,6 @@ internal sealed class LineEditor
         _lastRenderWidth = DisplayWidth(visiblePrompt);
         _lastRenderLines = 1;
         _lastCursorLine = 0;
-        using var inputScope = TerminalInput.Apply(TerminalInputPolicy.LineEditor);
         var buffer = new StringBuilder();
         var cursor = 0;
         var historyIndex = _history.Count;
@@ -44,16 +47,6 @@ internal sealed class LineEditor
             var input = TerminalInput.Read(TerminalInputPolicy.LineEditor);
             if (input.Kind == TerminalInputEventKind.Ignored)
             {
-                continue;
-            }
-
-            if (input.Kind == TerminalInputEventKind.MouseWheel)
-            {
-                _scrollHandler?.Invoke(input.WheelDelta, () =>
-                {
-                    ResetRenderState();
-                    Render(prompt, visiblePrompt, buffer, cursor);
-                });
                 continue;
             }
 
@@ -125,23 +118,37 @@ internal sealed class LineEditor
                     cursor = buffer.Length;
                     Render(prompt, visiblePrompt, buffer, cursor);
                     break;
+                case ConsoleKey.PageUp:
+                    ScrollTranscript(-10, prompt, visiblePrompt, buffer, cursor);
+                    break;
+                case ConsoleKey.PageDown:
+                    ScrollTranscript(10, prompt, visiblePrompt, buffer, cursor);
+                    break;
+                case ConsoleKey.P when key.Modifiers.HasFlag(ConsoleModifiers.Control):
+                case ConsoleKey.UpArrow when key.Modifiers.HasFlag(ConsoleModifiers.Alt):
+                    MoveHistoryPrevious(prompt, visiblePrompt, buffer, ref cursor, ref historyIndex);
+                    break;
+                case ConsoleKey.N when key.Modifiers.HasFlag(ConsoleModifiers.Control):
+                case ConsoleKey.DownArrow when key.Modifiers.HasFlag(ConsoleModifiers.Alt):
+                    MoveHistoryNext(prompt, visiblePrompt, buffer, ref cursor, ref historyIndex);
+                    break;
                 case ConsoleKey.UpArrow:
-                    if (_history.Count > 0 && historyIndex > 0)
+                    if (scrollNavigation)
                     {
-                        historyIndex--;
-                        ReplaceBuffer(buffer, _history[historyIndex], ref cursor);
-                        Render(prompt, visiblePrompt, buffer, cursor);
+                        ScrollTranscript(-1, prompt, visiblePrompt, buffer, cursor);
+                        break;
                     }
 
+                    MoveHistoryPrevious(prompt, visiblePrompt, buffer, ref cursor, ref historyIndex);
                     break;
                 case ConsoleKey.DownArrow:
-                    if (historyIndex < _history.Count)
+                    if (scrollNavigation)
                     {
-                        historyIndex++;
-                        ReplaceBuffer(buffer, historyIndex == _history.Count ? "" : _history[historyIndex], ref cursor);
-                        Render(prompt, visiblePrompt, buffer, cursor);
+                        ScrollTranscript(1, prompt, visiblePrompt, buffer, cursor);
+                        break;
                     }
 
+                    MoveHistoryNext(prompt, visiblePrompt, buffer, ref cursor, ref historyIndex);
                     break;
                 case ConsoleKey.Tab:
                     Complete(prompt, visiblePrompt, buffer, ref cursor);
@@ -157,6 +164,54 @@ internal sealed class LineEditor
                     break;
             }
         }
+    }
+
+    private void MoveHistoryPrevious(
+        string prompt,
+        string visiblePrompt,
+        StringBuilder buffer,
+        ref int cursor,
+        ref int historyIndex)
+    {
+        if (_history.Count == 0 || historyIndex <= 0)
+        {
+            return;
+        }
+
+        historyIndex--;
+        ReplaceBuffer(buffer, _history[historyIndex], ref cursor);
+        Render(prompt, visiblePrompt, buffer, cursor);
+    }
+
+    private void MoveHistoryNext(
+        string prompt,
+        string visiblePrompt,
+        StringBuilder buffer,
+        ref int cursor,
+        ref int historyIndex)
+    {
+        if (historyIndex >= _history.Count)
+        {
+            return;
+        }
+
+        historyIndex++;
+        ReplaceBuffer(buffer, historyIndex == _history.Count ? "" : _history[historyIndex], ref cursor);
+        Render(prompt, visiblePrompt, buffer, cursor);
+    }
+
+    private void ScrollTranscript(
+        int delta,
+        string prompt,
+        string visiblePrompt,
+        StringBuilder buffer,
+        int cursor)
+    {
+        _scrollHandler?.Invoke(delta, () =>
+        {
+            ResetRenderState();
+            Render(prompt, visiblePrompt, buffer, cursor);
+        });
     }
 
     private void Complete(string prompt, string visiblePrompt, StringBuilder buffer, ref int cursor)

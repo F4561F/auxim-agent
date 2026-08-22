@@ -1,4 +1,4 @@
-using Auxim.Core.Config;
+using Auxim.Core.Runtime;
 
 namespace Auxim.Cli.Interactive;
 
@@ -6,11 +6,11 @@ internal sealed class InteractiveHistory
 {
     private const int MaxEntries = 200;
     private readonly List<string> _entries;
-    private readonly string _path;
+    private readonly IAuximRuntime _runtime;
 
-    private InteractiveHistory(string path, IEnumerable<string> entries)
+    private InteractiveHistory(IAuximRuntime runtime, IEnumerable<string> entries)
     {
-        _path = path;
+        _runtime = runtime;
         _entries = entries
             .Where(entry => !string.IsNullOrWhiteSpace(entry))
             .TakeLast(MaxEntries)
@@ -19,27 +19,8 @@ internal sealed class InteractiveHistory
 
     public IReadOnlyList<string> Entries => _entries;
 
-    public static InteractiveHistory Load()
-    {
-        var path = Path.Combine(ConfigLoader.GetAuximHome(), "history");
-        try
-        {
-            if (!File.Exists(path))
-            {
-                return new InteractiveHistory(path, []);
-            }
-
-            return new InteractiveHistory(path, File.ReadAllLines(path));
-        }
-        catch (IOException)
-        {
-            return new InteractiveHistory(path, []);
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return new InteractiveHistory(path, []);
-        }
-    }
+    public static InteractiveHistory Load(IAuximRuntime runtime) =>
+        new(runtime, runtime.LoadInputHistory());
 
     public void Add(string input)
     {
@@ -61,18 +42,5 @@ internal sealed class InteractiveHistory
         }
     }
 
-    public void Save()
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(_path) ?? ".");
-            File.WriteAllLines(_path, _entries);
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-    }
+    public void Save() => _runtime.SaveInputHistory(_entries);
 }

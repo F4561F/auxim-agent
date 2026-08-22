@@ -74,6 +74,34 @@ public sealed class VirtualAgentFileSystemTests : IDisposable
     }
 
     [Fact]
+    public void RejectsSymbolicLinksThatEscapeMount()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var outside = Path.Combine(Path.GetTempPath(), "auxim-vafs-outside", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        var outsideFile = Path.Combine(outside, "secret.txt");
+        var link = Path.Combine(_workspace, "outside-link.txt");
+        File.WriteAllText(outsideFile, "secret");
+        File.CreateSymbolicLink(link, outsideFile);
+        try
+        {
+            var vafs = VirtualAgentFileSystem.FromEnvironment();
+
+            Assert.Throws<VirtualPathException>(() =>
+                vafs.ResolveToHostPath("/workspace/outside-link.txt"));
+        }
+        finally
+        {
+            File.Delete(link);
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    [Fact]
     public void RewritesOnlyHostPathBoundaries()
     {
         var vafs = VirtualAgentFileSystem.FromEnvironment();

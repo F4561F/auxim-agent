@@ -1,5 +1,6 @@
 using Auxim.Tools;
 using Auxim.Core.Agent;
+using Auxim.Core.Resources;
 using System.Net;
 using System.Text.Json;
 using Xunit;
@@ -18,6 +19,25 @@ public sealed class ToolRegistryTests
             new Dictionary<string, object?> { ["text"] = "hello" });
 
         Assert.Equal("hello", result);
+    }
+
+    [Fact]
+    public void BuiltInToolsResolveArgumentSpecificResourceAccess()
+    {
+        var registry = BuiltInTools.CreateDefaultRegistry();
+
+        var fileAccess = Assert.Single(registry.Get("file.write").ResolveResourceAccesses(
+            new Dictionary<string, object?> { ["path"] = "/workspace/output.txt" }));
+        var shellAccess = Assert.Single(registry.Get("shell.run").ResolveResourceAccesses(
+            new Dictionary<string, object?> { ["command"] = "cat /workspace/README.md" }));
+
+        Assert.Equal(ResourceAction.Write, fileAccess.Action);
+        Assert.Equal("vafs:/workspace/output.txt", fileAccess.Resource.Value);
+        Assert.True(fileAccess.RequiresApproval);
+        Assert.Equal(ResourceAction.Execute, shellAccess.Action);
+        Assert.StartsWith("vashell:", shellAccess.Resource.Value);
+        Assert.True(shellAccess.RequiresApproval);
+        Assert.Throws<ArgumentException>(() => ResourceUri.Vafs("/workspace/../../etc/passwd"));
     }
 
     [Fact]
@@ -64,7 +84,11 @@ public sealed class ToolRegistryTests
         var result = await client.CompleteWithToolsStreamingAsync(
             [new AgentMessage("user", "hello")],
             [],
-            deltas.Add,
+            (delta, _) =>
+            {
+                deltas.Add(delta);
+                return ValueTask.CompletedTask;
+            },
             CancellationToken.None);
 
         using var document = JsonDocument.Parse(handler.RequestBody);
@@ -93,7 +117,7 @@ public sealed class ToolRegistryTests
         var result = await client.CompleteWithToolsStreamingAsync(
             [new AgentMessage("user", "read README")],
             [],
-            _ => { },
+            (_, _) => ValueTask.CompletedTask,
             CancellationToken.None);
 
         var call = Assert.Single(result.ToolCalls);

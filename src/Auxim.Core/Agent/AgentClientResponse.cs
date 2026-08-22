@@ -20,6 +20,6 @@ public interface IStreamingToolCallingAgentClient : IToolCallingAgentClient
     Task<AgentClientResponse> CompleteWithToolsStreamingAsync(
         IReadOnlyList<AgentMessage> messages,
         IReadOnlyList<Tools.ToolDefinition> tools,
-        Action<string> contentDeltaSink,
+        Func<string, CancellationToken, ValueTask> contentDeltaSink,
         CancellationToken cancellationToken);
 }

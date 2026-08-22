@@ -1,49 +1,47 @@
-using Auxim.Core.State;
+using Auxim.Core.Runtime;
 
 namespace Auxim.Cli;
 
 public static partial class CommandHandlers
 {
-    public static int HandleSession(IReadOnlyList<string> args)
+    public static int HandleSession(IReadOnlyList<string> args, IAuximRuntime runtime)
     {
         var subcommand = args.FirstOrDefault() ?? "show";
-        var store = new SessionStore();
         return subcommand switch
         {
-            "clear" => ClearSession(store),
-            "list" => ListSessions(store),
-            "new" => NewSession(store, string.Join(' ', args.Skip(1))),
-            "search" => SearchSessions(store, string.Join(' ', args.Skip(1))),
-            "show" => ShowSession(store, args.Skip(1).FirstOrDefault()),
-            "use" => UseSession(store, args.Skip(1).FirstOrDefault()),
+            "clear" => ClearSession(runtime),
+            "list" => ListSessions(runtime),
+            "new" => NewSession(runtime, string.Join(' ', args.Skip(1))),
+            "search" => SearchSessions(runtime, string.Join(' ', args.Skip(1))),
+            "show" => ShowSession(runtime, args.Skip(1).FirstOrDefault()),
+            "use" => UseSession(runtime, args.Skip(1).FirstOrDefault()),
             _ => PrintSessionHelp(),
         };
     }
 
-    private static int ListSessions(SessionStore store)
+    private static int ListSessions(IAuximRuntime runtime)
     {
-        var currentId = store.GetCurrentSessionId();
-        foreach (var session in store.List())
+        foreach (var session in runtime.ListSessions())
         {
-            var marker = session.Id == currentId ? "*" : " ";
+            var marker = session.IsCurrent ? "*" : " ";
             Console.WriteLine($"{marker} {session.Id}  {session.UpdatedAt:yyyy-MM-dd HH:mm}  {session.Title}");
         }
 
         return 0;
     }
 
-    private static int NewSession(SessionStore store, string title)
+    private static int NewSession(IAuximRuntime runtime, string title)
     {
-        var session = store.NewSession(title);
+        var session = runtime.CreateSession(title);
         Console.WriteLine($"Current session: {session.Id}");
         return 0;
     }
 
-    private static int ShowSession(SessionStore store, string? id)
+    private static int ShowSession(IAuximRuntime runtime, string? id)
     {
         var session = string.IsNullOrWhiteSpace(id)
-            ? store.GetOrCreateCurrent()
-            : store.TryLoad(id);
+            ? runtime.GetOrCreateCurrentSession()
+            : runtime.GetSession(id);
         if (session is null)
         {
             Console.Error.WriteLine("Session not found.");
@@ -63,7 +61,7 @@ public static partial class CommandHandlers
         return 0;
     }
 
-    private static int SearchSessions(SessionStore store, string query)
+    private static int SearchSessions(IAuximRuntime runtime, string query)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -71,27 +69,13 @@ public static partial class CommandHandlers
             return 1;
         }
 
-        var matches = 0;
-        foreach (var record in store.List())
+        var sessions = runtime.SearchSessions(query);
+        foreach (var session in sessions)
         {
-            var session = store.TryLoad(record.Id);
-            if (session is null)
-            {
-                continue;
-            }
-
-            var hit = session.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || session.Messages.Any(message => message.Content.Contains(query, StringComparison.OrdinalIgnoreCase));
-            if (!hit)
-            {
-                continue;
-            }
-
-            matches++;
             Console.WriteLine($"{session.Id}  {session.UpdatedAt:yyyy-MM-dd HH:mm}  {session.Title}");
         }
 
-        if (matches == 0)
+        if (sessions.Count == 0)
         {
             Console.WriteLine("No matching sessions.");
         }
@@ -99,22 +83,21 @@ public static partial class CommandHandlers
         return 0;
     }
 
-    private static int UseSession(SessionStore store, string? id)
+    private static int UseSession(IAuximRuntime runtime, string? id)
     {
-        if (string.IsNullOrWhiteSpace(id) || store.TryLoad(id) is null)
+        if (string.IsNullOrWhiteSpace(id) || runtime.UseSession(id) is null)
         {
             Console.Error.WriteLine("Usage: auxim session use <session-id>");
             return 1;
         }
 
-        store.SetCurrent(id);
         Console.WriteLine($"Current session: {id}");
         return 0;
     }
 
-    private static int ClearSession(SessionStore store)
+    private static int ClearSession(IAuximRuntime runtime)
     {
-        store.ClearCurrent();
+        runtime.ClearCurrentSession();
         Console.WriteLine("Current session cleared. The next chat creates a new session.");
         return 0;
     }

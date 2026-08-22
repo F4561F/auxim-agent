@@ -24,6 +24,7 @@ internal sealed class InteractiveScreen : IDisposable
     public static InteractiveScreen Enter()
     {
         var enabled = ShouldUseAlternateScreen();
+        TerminalMouse.Reset();
         if (!enabled)
         {
             IsAlternateScreenActive = false;
@@ -32,7 +33,6 @@ internal sealed class InteractiveScreen : IDisposable
 
         WriteAndFlush("\u001b[?1049h\u001b[?25h");
         WriteAndFlush("\u001b]0;Auxim\u0007");
-        TerminalMouse.SetTracking(enabled: true);
 
         Clear();
         IsAlternateScreenActive = true;
@@ -40,6 +40,23 @@ internal sealed class InteractiveScreen : IDisposable
     }
 
     public static bool IsAlternateScreenActive { get; private set; }
+
+    public static void SetHistoryScrollActive(bool active)
+    {
+        if (!IsAlternateScreenActive)
+        {
+            return;
+        }
+
+        if (active)
+        {
+            TerminalMouse.EnableAlternateScroll();
+        }
+        else
+        {
+            TerminalMouse.DisableAlternateScroll();
+        }
+    }
 
     public static void Clear()
     {
@@ -62,7 +79,7 @@ internal sealed class InteractiveScreen : IDisposable
 
         if (_enabled)
         {
-            TerminalMouse.SetTracking(enabled: false);
+            TerminalMouse.DisableAlternateScroll();
 
             WriteAndFlush("\u001b[?25h\u001b[?1049l");
             IsAlternateScreenActive = false;
@@ -78,7 +95,7 @@ internal sealed class InteractiveScreen : IDisposable
             return;
         }
 
-        TerminalMouse.SetTracking(enabled: false);
+        TerminalMouse.DisableAlternateScroll();
         WriteAndFlush("\u001b[?25h\u001b[?1049l");
         IsAlternateScreenActive = false;
     }
@@ -90,7 +107,7 @@ internal sealed class InteractiveScreen : IDisposable
             return;
         }
 
-        WriteAndFlush("\u001b[?1006l\u001b[?1000l\u001b[?25h\u001b[?1049l");
+        WriteAndFlush("\u001b[?1007l\u001b[?1006l\u001b[?1003l\u001b[?1002l\u001b[?1000l\u001b[?25h\u001b[?1049l");
         IsAlternateScreenActive = false;
     }
 

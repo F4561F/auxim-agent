@@ -89,7 +89,7 @@ public sealed class OpenAiCompatibleAgentClient : IStreamingToolCallingAgentClie
     public async Task<AgentClientResponse> CompleteWithToolsStreamingAsync(
         IReadOnlyList<AgentMessage> messages,
         IReadOnlyList<ToolDefinition> tools,
-        Action<string> contentDeltaSink,
+        Func<string, CancellationToken, ValueTask> contentDeltaSink,
         CancellationToken cancellationToken)
     {
         var request = new ChatCompletionRequest(
@@ -156,7 +156,7 @@ public sealed class OpenAiCompatibleAgentClient : IStreamingToolCallingAgentClie
             if (!string.IsNullOrEmpty(delta.Content))
             {
                 assistantContent.Append(delta.Content);
-                contentDeltaSink(delta.Content);
+                await contentDeltaSink(delta.Content, cancellationToken);
             }
 
             foreach (var toolCall in delta.ToolCalls ?? [])

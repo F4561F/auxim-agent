@@ -1,61 +1,60 @@
-using Auxim.Core.Approval;
+using Auxim.Core.Runtime;
 
 namespace Auxim.Cli;
 
 public static partial class CommandHandlers
 {
-    public static int HandleApproval(IReadOnlyList<string> args)
+    public static int HandleApproval(IReadOnlyList<string> args, IAuximRuntime runtime)
     {
         var subcommand = args.FirstOrDefault() ?? "list";
-        var service = new ToolApprovalService();
         return subcommand switch
         {
-            "clear" => ClearApprovals(service),
-            "list" => ListApprovals(service),
-            "revoke" => RevokeApproval(service, args.Skip(1).FirstOrDefault()),
+            "clear" => ClearApprovals(runtime),
+            "list" => ListApprovals(runtime),
+            "revoke" => RevokeApproval(runtime, args.Skip(1).FirstOrDefault()),
             _ => PrintApprovalHelp(),
         };
     }
 
-    private static int ListApprovals(ToolApprovalService service)
+    private static int ListApprovals(IAuximRuntime runtime)
     {
-        var tools = service.ListAlwaysAllowedTools();
-        if (tools.Count == 0)
+        var grants = runtime.ListApprovalGrants();
+        if (grants.Count == 0)
         {
-            Console.WriteLine("No tools are always allowed.");
+            Console.WriteLine("No resource approval grants are stored.");
             return 0;
         }
 
-        foreach (var tool in tools)
+        foreach (var grant in grants)
         {
-            Console.WriteLine(tool);
+            Console.WriteLine($"{grant.Id}  {grant.Action}  {grant.Resource}");
         }
 
         return 0;
     }
 
-    private static int ClearApprovals(ToolApprovalService service)
+    private static int ClearApprovals(IAuximRuntime runtime)
     {
-        service.ClearAlwaysAllowedTools();
-        Console.WriteLine("Cleared always-allowed tool approvals.");
+        runtime.ClearApprovalGrants();
+        Console.WriteLine("Cleared resource approval grants.");
         return 0;
     }
 
-    private static int RevokeApproval(ToolApprovalService service, string? toolName)
+    private static int RevokeApproval(IAuximRuntime runtime, string? grantId)
     {
-        if (string.IsNullOrWhiteSpace(toolName))
+        if (string.IsNullOrWhiteSpace(grantId))
         {
-            Console.WriteLine("Usage: auxim approval revoke <tool-name>");
+            Console.WriteLine("Usage: auxim approval revoke <grant-id>");
             return 1;
         }
 
-        if (!service.RevokeAlwaysAllowedTool(toolName))
+        if (!runtime.RevokeApprovalGrant(grantId))
         {
-            Console.WriteLine($"Tool is not always allowed: {toolName}");
+            Console.WriteLine($"Approval grant not found: {grantId}");
             return 1;
         }
 
-        Console.WriteLine($"Revoked always-allowed approval for: {toolName}");
+        Console.WriteLine($"Revoked approval grant: {grantId}");
         return 0;
     }
 
@@ -63,7 +62,7 @@ public static partial class CommandHandlers
     {
         Console.WriteLine("Usage:");
         Console.WriteLine("  auxim approval list");
-        Console.WriteLine("  auxim approval revoke <tool-name>");
+        Console.WriteLine("  auxim approval revoke <grant-id>");
         Console.WriteLine("  auxim approval clear");
         return 1;
     }

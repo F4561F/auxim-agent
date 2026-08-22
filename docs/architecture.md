@@ -25,8 +25,7 @@ Auxim.Cli
   approvals, diagnostics, and the interactive dashboard
 
 Auxim.Gateway
-  Future platform gateway host with per-platform adapters. The console adapter
-  is currently a placeholder.
+  HTTP/SSE runtime host with SDK client and built-in connector source modules.
 
 Auxim.Tools
   Built-in tool registrations for files, search, git, web fetch, shell, todo,
@@ -44,8 +43,10 @@ Auxim.Gateway ───┘          │
                               └──> Auxim.VAFS
 ```
 
-CLI and Gateway should behave like frontends. They should not reimplement agent
-or session orchestration; they should call `IAuximRuntime`.
+CLI and Gateway are frontends. Every application operation passes through
+`IAuximRuntime`, including configuration, credentials, approvals, sandbox
+state, tools, sessions, chat, history, host commands, and external conversation
+mapping. Neither frontend accesses application infrastructure directly.
 
 ## Runtime Flow
 
@@ -76,20 +77,26 @@ Shell environment variables can override config for one-off runs.
 ## Tools and Approval
 
 Tools are registered as `ToolDefinition` instances in a shared `ToolRegistry`.
-Each tool exposes a stable name, toolset, description, JSON-schema-like
-parameter schema, and async handler. Tool names are converted to schema-safe
-function names by replacing dots with underscores.
+Each tool exposes a stable name, toolset, description, parameter schema, async
+handler, and an optional argument-specific resource resolver. The resolver
+produces `ResourceAccess` values containing a `ResourceAction` and
+`ResourceUri`. Current built-ins preserve the existing approval behavior for
+`shell.run`, `file.write`, `file.patch`, and `todo.done`, but policy no longer
+identifies them from a hard-coded Tool-name set.
 
-High-risk tools are reviewed by `ToolApprovalService` before execution:
-`shell.run`, `file.write`, `file.patch`, and `todo.done`. In an interactive
-terminal, the user can allow once, always allow that tool, or deny with
-feedback. In non-interactive runs, approval-required tools are denied.
+Approval uses `IApprovalHandler.RequestAsync`. Every request has a unique ID
+and receives the active `CancellationToken`. CLI provides an interactive
+handler; Gateway provides a non-interactive handler. Remembered decisions are
+exact action/resource grants. Resource declarations drive approval and audit,
+but do not sandbox a Tool handler.
 
 ## VAFS
 
 VAFS, the Virtual Agent File System, is the path boundary between the model and
 the host machine. The agent-facing filesystem exposes `/workspace` and mounted
-`/volumes/<name>` roots. Real host paths are used only inside Auxim.
+`/volumes/<name>` roots while rejecting lexical and symbolic-link escapes from
+physical mount roots. Real host paths are used only inside Auxim. This is a
+Tool-level boundary rather than process isolation.
 
 Default mapping:
 
@@ -137,7 +144,7 @@ Auxim stores state under `~/.auxim` by default, or `AUXIM_HOME` when set:
 - `.env` - provider API keys and other secrets.
 - `sessions/*.json` - session documents.
 - `current_session` - the active session id.
-- `approvals.json` - always-allowed high-risk tools.
+- `approvals.json` - remembered action/resource approval grants.
 - `todos.json` - todo tool state.
 - `logs/agent.log` - agent/tool log output.
 
@@ -148,11 +155,73 @@ type implementing `IAuximPlugin` is instantiated and asked to register tools.
 This keeps external tool packages separate from the built-in `Auxim.Tools`
 assembly.
 
+Native DLL plugins are trusted in-process extensions. They have the host
+process permissions and are not automatically constrained by VAFS, VAShell,
+resource declarations, or approval policy.
+
+## Gateway API
+
+`Auxim.Gateway` exposes the shared runtime without depending on CLI:
+
+```text
+GET  /health
+GET  /v1/status
+GET  /v1/tools
+GET  /v1/sessions
+GET  /v1/sessions/current
+GET  /v1/sessions/{id}
+POST /v1/sessions
+POST /v1/sessions/{id}/use
+DELETE /v1/sessions/current
+GET  /v1/message-conversations
+POST /v1/messages
+POST /v1/chat
+POST /v1/chat/stream
+```
+
+The Gateway route layer only handles HTTP concerns. Status, tools, sessions,
+chat, and connector conversation mapping are delegated to `IAuximRuntime`,
+matching the CLI execution path.
+
+Set `AUXIM_GATEWAY_TOKEN` to require `Authorization: Bearer <token>` for every
+endpoint except `/health`. Set `AUXIM_GATEWAY_CORS_ORIGINS` to a comma-separated
+origin list when browser clients need cross-origin access.
+
+`/v1/chat/stream` uses Server-Sent Events derived from the same structured
+`RuntimeEvent` stream consumed by CLI and runtime logging. Gateway runs with an
+asynchronous non-interactive approval handler, so protected resource accesses
+are denied unless an exact grant already exists.
+
+`/v1/messages` is Auxim's lightweight messaging connector boundary. External
+adapters send a common envelope with `platform`, `conversationId`, `userId`,
+`text`, and an optional scope. The runtime persists the conversation-to-session
+mapping in `gateway-conversations.json` under Auxim home.
+
+The built-in Telegram connector lives under `Auxim.Gateway/Connectors`, uses
+Telegram Bot API long polling, and calls
+`IAuximRuntime.SendExternalMessageAsync`, as does `/v1/messages`. It starts as a
+hosted service only when its bot token is set.
+
+## SDK
+
+The `Auxim.Gateway/SDK` module is the typed .NET client for Gateway. It is built
+into the Gateway assembly but retains the `Auxim.SDK` namespace as a distinct
+public API. The module owns HTTP request construction, bearer auth headers,
+typed response models, Gateway error exceptions, messaging connector calls,
+and SSE event parsing.
+
+## Run And Session Identity
+
+`AuximRunId` identifies one live execution and is attached to `RuntimeEvent`
+and runtime results. A conversation Session stores user input and final answers;
+it does not store transient Tool or approval state. This separates the future
+Run model from conversation history without implementing a Run Engine or
+persistent Run store.
+
 ## Current Gaps
 
-- The gateway has only a console placeholder adapter.
 - Skills are reserved in the repository layout but not implemented yet.
 - The CLI provider picker still owns the interactive provider/model menu, while
   shared API-key naming lives in Core.
-- Runtime streaming is callback-based today; a future Gateway may want an async
-  event stream API over the same runtime boundary.
+- `IRuntimeEventSink` is push-based today; a future consumer may justify an
+  async-enumerable transport without changing the event model.

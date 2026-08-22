@@ -1,14 +1,11 @@
-using System.Diagnostics;
-
 namespace Auxim.Cli.Interactive;
 
 internal static class TerminalMouse
 {
     private static readonly object Sync = new();
-    private static bool _trackingEnabled;
-    private const int MouseSequenceTimeoutMs = 50;
+    private static bool _alternateScrollEnabled;
 
-    public static void SetTracking(bool enabled)
+    public static void Reset()
     {
         if (!Ansi.ControlSequencesEnabled)
         {
@@ -17,133 +14,61 @@ internal static class TerminalMouse
 
         lock (Sync)
         {
-            if (enabled == _trackingEnabled)
+            WriteAndFlush("\u001b[?1007l\u001b[?1006l\u001b[?1003l\u001b[?1002l\u001b[?1000l");
+            _alternateScrollEnabled = false;
+        }
+    }
+
+    public static void EnableAlternateScroll()
+    {
+        if (!Ansi.ControlSequencesEnabled)
+        {
+            return;
+        }
+
+        lock (Sync)
+        {
+            if (_alternateScrollEnabled)
             {
                 return;
             }
 
-            WriteAndFlush(enabled
-                ? "\u001b[?1000h\u001b[?1006h"
-                : "\u001b[?1006l\u001b[?1000l");
-            _trackingEnabled = enabled;
+            // 1007 translates wheel movement into cursor keys without taking
+            // click and drag events away from the terminal's text selection.
+            WriteAndFlush("\u001b[?1003l\u001b[?1002l\u001b[?1000l\u001b[?1006l\u001b[?1007h");
+            _alternateScrollEnabled = true;
         }
     }
 
-    public static IDisposable UseTracking(bool enabled)
+    public static void DisableAlternateScroll()
+    {
+        if (!Ansi.ControlSequencesEnabled)
+        {
+            return;
+        }
+
+        lock (Sync)
+        {
+            if (!_alternateScrollEnabled)
+            {
+                return;
+            }
+
+            WriteAndFlush("\u001b[?1007l");
+            _alternateScrollEnabled = false;
+        }
+    }
+
+    public static IDisposable SuspendAlternateScroll()
     {
         bool restore;
         lock (Sync)
         {
-            restore = _trackingEnabled;
+            restore = _alternateScrollEnabled;
         }
 
-        SetTracking(enabled);
-        return new TrackingScope(restore);
-    }
-
-    public static bool TryConsumeMouseEvent(ConsoleKeyInfo key, out int wheelDelta)
-    {
-        wheelDelta = 0;
-        if (key.Key == ConsoleKey.Escape)
-        {
-            return TryReadMouseSequence(first: null, out var text) && TryParseMouseSequence(text, out wheelDelta);
-        }
-
-        // Some terminals can leave the ESC byte behind when input is read while
-        // wheel events are still arriving. Consume the orphan SGR mouse tail.
-        if (key.KeyChar == '[')
-        {
-            return TryReadMouseSequence(first: '[', out var text) && TryParseMouseSequence(text, out wheelDelta);
-        }
-
-        return false;
-    }
-
-    private static bool TryReadMouseSequence(char? first, out string text)
-    {
-        text = "";
-        var sequence = new List<char>();
-        if (first is { } firstCharacter)
-        {
-            sequence.Add(firstCharacter);
-        }
-        else
-        {
-            if (!WaitForKey(MouseSequenceTimeoutMs))
-            {
-                return false;
-            }
-
-            sequence.Add(Console.ReadKey(intercept: true).KeyChar);
-        }
-
-        if (sequence[0] != '[')
-        {
-            return false;
-        }
-
-        if (!WaitForKey(MouseSequenceTimeoutMs))
-        {
-            return false;
-        }
-
-        sequence.Add(Console.ReadKey(intercept: true).KeyChar);
-        if (sequence[1] != '<')
-        {
-            return false;
-        }
-
-        while (WaitForKey(MouseSequenceTimeoutMs) && sequence.Count < 32)
-        {
-            var next = Console.ReadKey(intercept: true).KeyChar;
-            sequence.Add(next);
-            if (next is 'm' or 'M')
-            {
-                text = new string(sequence.ToArray());
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool TryParseMouseSequence(string text, out int wheelDelta)
-    {
-        wheelDelta = 0;
-        if (!text.StartsWith("[<", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var end = text.IndexOf(';');
-        if (end < 2 || !int.TryParse(text[2..end], out var button))
-        {
-            return true;
-        }
-
-        wheelDelta = button switch
-        {
-            64 => -1,
-            65 => 1,
-            _ => 0,
-        };
-        return true;
-    }
-
-    private static bool WaitForKey(int milliseconds)
-    {
-        var stopwatch = Stopwatch.StartNew();
-        while (stopwatch.ElapsedMilliseconds < milliseconds)
-        {
-            if (Console.KeyAvailable)
-            {
-                return true;
-            }
-
-            Thread.Sleep(1);
-        }
-
-        return Console.KeyAvailable;
+        DisableAlternateScroll();
+        return new AlternateScrollSuspension(restore);
     }
 
     private static void WriteAndFlush(string text)
@@ -155,11 +80,11 @@ internal static class TerminalMouse
         }
         catch
         {
-            // stderr/stdout may already be closed during shutdown.
+            // stdout may already be closed during shutdown.
         }
     }
 
-    private sealed class TrackingScope(bool restore) : IDisposable
+    private sealed class AlternateScrollSuspension(bool restore) : IDisposable
     {
         private bool _disposed;
 
@@ -172,7 +97,7 @@ internal static class TerminalMouse
 
             if (restore)
             {
-                SetTracking(enabled: true);
+                EnableAlternateScroll();
             }
 
             _disposed = true;

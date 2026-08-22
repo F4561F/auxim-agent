@@ -1,15 +1,17 @@
 using Auxim.Cli;
 using Auxim.Cli.Interactive;
 using Auxim.Cli.Services;
+using Auxim.Core.Runtime;
 using Auxim.Tools;
 
 ConsoleHost.Configure();
+IAuximRuntime runtime = AuximApplication.CreateRuntime();
 
 try
 {
     if (args.Length == 0)
     {
-        return await InteractiveShell.RunAsync();
+        return await InteractiveShell.RunAsync(runtime);
     }
 
     var command = args.FirstOrDefault() ?? "help";
@@ -25,14 +27,13 @@ try
                 return 1;
             }
 
-            var result = await new ChatRunner().RunAsync(prompt);
+            var result = await new ChatRunner(runtime).RunAsync(prompt);
             Console.WriteLine(result.FinalResponse);
             return 0;
         }
         case "tools":
         {
-            var registry = BuiltInTools.CreateDefaultRegistry();
-            foreach (var tool in registry.List().OrderBy(tool => tool.Name))
+            foreach (var tool in runtime.ListTools())
             {
                 Console.WriteLine($"{tool.Name} [{tool.Toolset}] - {tool.Description}");
             }
@@ -40,21 +41,21 @@ try
             return 0;
         }
         case "model":
-            return CommandHandlers.HandleModel(args.Skip(1).ToArray());
+            return CommandHandlers.HandleModel(args.Skip(1).ToArray(), runtime);
         case "auth":
-            return CommandHandlers.HandleAuth(args.Skip(1).ToArray());
+            return CommandHandlers.HandleAuth(args.Skip(1).ToArray(), runtime);
         case "config":
-            return CommandHandlers.HandleConfig(args.Skip(1).ToArray());
+            return CommandHandlers.HandleConfig(args.Skip(1).ToArray(), runtime);
         case "session":
-            return CommandHandlers.HandleSession(args.Skip(1).ToArray());
+            return CommandHandlers.HandleSession(args.Skip(1).ToArray(), runtime);
         case "tool":
-            return await CommandHandlers.HandleTool(args.Skip(1).ToArray());
+            return await CommandHandlers.HandleTool(args.Skip(1).ToArray(), runtime);
         case "approval":
-            return CommandHandlers.HandleApproval(args.Skip(1).ToArray());
+            return CommandHandlers.HandleApproval(args.Skip(1).ToArray(), runtime);
         case "sandbox":
-            return CommandHandlers.HandleSandbox(args.Skip(1).ToArray());
+            return CommandHandlers.HandleSandbox(args.Skip(1).ToArray(), runtime);
         case "doctor":
-            return CommandHandlers.HandleDoctor();
+            return CommandHandlers.HandleDoctor(runtime);
         default:
             Console.WriteLine("Auxim");
             Console.WriteLine("Usage:");

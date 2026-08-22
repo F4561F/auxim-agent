@@ -29,12 +29,10 @@ public sealed class SessionStore
             }
         }
 
-        var created = NewSession();
-        SetCurrent(created.Id);
-        return created;
+        return NewSession();
     }
 
-    public SessionDocument NewSession(string? title = null)
+    public SessionDocument NewSession(string? title = null, bool makeCurrent = true)
     {
         var now = DateTimeOffset.UtcNow;
         var session = new SessionDocument
@@ -47,7 +45,11 @@ public sealed class SessionStore
         };
 
         Save(session);
-        SetCurrent(session.Id);
+        if (makeCurrent)
+        {
+            SetCurrent(session.Id);
+        }
+
         return session;
     }
 

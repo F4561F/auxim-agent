@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using Auxim.Core.Tools;
+using Auxim.Core.Resources;
 
 namespace Auxim.Tools;
 
@@ -39,6 +40,10 @@ public static class WebTools
                     ("maxChars", "integer", "Maximum characters to return, capped at 50000."),
                 ],
                 ["url"]),
+            ResourceAccessResolver = args =>
+                [new ResourceAccess(
+                    ResourceAction.Read,
+                    new ResourceUri(FileTools.Required(args, "url")))],
         });
     }
 }

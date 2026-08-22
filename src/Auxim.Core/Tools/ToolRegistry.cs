@@ -16,16 +16,21 @@ public sealed class ToolRegistry
 
     public IReadOnlyCollection<ToolDefinition> List() => _tools.Values.ToArray();
 
-    public async Task<string> InvokeAsync(
-        string name,
-        IReadOnlyDictionary<string, object?> arguments,
-        CancellationToken cancellationToken = default)
+    public ToolDefinition Get(string name)
     {
         if (!_tools.TryGetValue(name, out var definition))
         {
             throw new InvalidOperationException($"Tool '{name}' is not registered.");
         }
 
-        return await definition.Handler(arguments, cancellationToken);
+        return definition;
+    }
+
+    public async Task<string> InvokeAsync(
+        string name,
+        IReadOnlyDictionary<string, object?> arguments,
+        CancellationToken cancellationToken = default)
+    {
+        return await Get(name).Handler(arguments, cancellationToken);
     }
 }

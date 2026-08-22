@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Auxim.Core.Tools;
+using Auxim.Core.Resources;
 using Auxim.VAFS;
 
 namespace Auxim.Tools;
@@ -12,7 +13,11 @@ public static class GitTools
             "git.status",
             "git",
             "Returns git status --short.",
-            (_, cancellationToken) => RunGitAsync(["status", "--short"], cancellationToken)));
+            (_, cancellationToken) => RunGitAsync(["status", "--short"], cancellationToken))
+        {
+            ResourceAccessResolver = _ =>
+                [new ResourceAccess(ResourceAction.Read, ResourceUri.Vafs("/workspace"))],
+        });
 
         registry.Register(new ToolDefinition(
             "git.diff",
@@ -27,6 +32,8 @@ public static class GitTools
             })
         {
             ParametersSchema = FileTools.ObjectSchema(("staged", "boolean", "Show staged diff when true.")),
+            ResourceAccessResolver = _ =>
+                [new ResourceAccess(ResourceAction.Read, ResourceUri.Vafs("/workspace"))],
         });
     }
 

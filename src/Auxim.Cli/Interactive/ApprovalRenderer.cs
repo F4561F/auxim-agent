@@ -1,16 +1,16 @@
 using System.Text.Json;
 using Auxim.Core.Approval;
-using Auxim.Core.Logging;
 
 namespace Auxim.Cli.Interactive;
 
 internal static class ApprovalRenderer
 {
-    public static (ToolApprovalDecision Decision, bool AlwaysAllow) Prompt(
-        string toolName,
-        IReadOnlyDictionary<string, object?> arguments)
+    public static async Task<ApprovalResponse> PromptAsync(
+        ApprovalRequest request,
+        CancellationToken cancellationToken)
     {
-        using var inputScope = TerminalInput.Apply(TerminalInputPolicy.Approval);
+        cancellationToken.ThrowIfCancellationRequested();
+        using var scrollSuspension = TerminalMouse.SuspendAlternateScroll();
         var width = Math.Max(20, Math.Min(ConsoleTheme.ConsoleWidth(), 96));
 
         Console.WriteLine();
@@ -19,16 +19,23 @@ internal static class ApprovalRenderer
             $"{Ansi.Bold("SAFETY REVIEW")}  {Ansi.Muted("Tool approval required")}",
             width);
         WriteBoxLines(
-            $"{ConsoleTheme.Chip("tool", toolName)}  {Ansi.WarningBackground(" high-risk ")}",
+            $"{ConsoleTheme.Chip("tool", request.ToolName)}  {Ansi.WarningBackground(" resource access ")}",
             width);
+        WriteBoxLines($"{Ansi.Muted("request")}  {request.RequestId}", width);
         WriteBoxLines(
             $"{Ansi.Muted("risk")}  This tool can modify files, run commands, or change state.",
             width);
         Console.WriteLine(Ansi.Warning($"{TerminalGlyphs.TeeLeft}{TerminalGlyphs.HorizontalLine(width - 2)}{TerminalGlyphs.TeeRight}"));
         WriteBoxLines($"{Ansi.Cyan(TerminalGlyphs.Section)} {Ansi.Bold("Arguments")}", width);
-        foreach (var arg in FormatArgumentsForDisplay(arguments))
+        foreach (var arg in FormatArgumentsForDisplay(request.Arguments))
         {
             WriteBoxLines($"  {Ansi.Muted(arg.Key.PadRight(14))} {arg.Value}", width);
+        }
+
+        WriteBoxLines($"{Ansi.Cyan(TerminalGlyphs.Section)} {Ansi.Bold("Resources")}", width);
+        foreach (var access in request.ResourceAccesses)
+        {
+            WriteBoxLines($"  {access.Action}  {access.Resource}", width);
         }
 
         Console.WriteLine(Ansi.Warning($"{TerminalGlyphs.TeeLeft}{TerminalGlyphs.HorizontalLine(width - 2)}{TerminalGlyphs.TeeRight}"));
@@ -49,7 +56,10 @@ internal static class ApprovalRenderer
 
         while (true)
         {
-            var input = TerminalInput.Read(TerminalInputPolicy.Approval);
+            cancellationToken.ThrowIfCancellationRequested();
+            var input = await TerminalInput.ReadAsync(
+                TerminalInputPolicy.Approval,
+                cancellationToken);
             if (input.Kind != TerminalInputEventKind.Key)
             {
                 continue;
@@ -90,13 +100,12 @@ internal static class ApprovalRenderer
 
                     break;
                 case ConsoleKey.Enter:
-                    return CompleteSelection(toolName, selected, options.Length, optionsTop);
+                    return CompleteSelection(selected, options.Length, optionsTop);
             }
         }
     }
 
-    private static (ToolApprovalDecision Decision, bool AlwaysAllow) CompleteSelection(
-        string toolName,
+    private static ApprovalResponse CompleteSelection(
         int selected,
         int optionCount,
         int optionsTop)
@@ -105,25 +114,22 @@ internal static class ApprovalRenderer
         switch (selected)
         {
             case 0:
-                AuximLog.Info($"approval.allow_once tool={toolName}");
                 Console.WriteLine(Ansi.Success("Allowed. Continuing."));
                 Console.WriteLine();
-                return (ToolApprovalDecision.Allow, false);
+                return ApprovalResponse.Allow();
             case 1:
-                AuximLog.Info($"approval.always_allow tool={toolName}");
                 Console.WriteLine(Ansi.Success("Always allowed. Future calls to this tool will not prompt."));
                 Console.WriteLine();
-                return (ToolApprovalDecision.Allow, true);
+                return ApprovalResponse.Allow(remember: true);
             default:
                 Console.Write(Ansi.Warning("Feedback for the model: "));
                 var reason = Console.ReadLine();
                 reason = string.IsNullOrWhiteSpace(reason)
                     ? "User denied this tool call."
                     : reason.Trim();
-                AuximLog.Warning($"approval.denied tool={toolName} reason={reason}");
                 Console.WriteLine(Ansi.Error("Denied. Feedback was sent to the model."));
                 Console.WriteLine();
-                return (ToolApprovalDecision.Deny(reason), false);
+                return ApprovalResponse.Deny(reason);
         }
     }
 

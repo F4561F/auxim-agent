@@ -29,7 +29,8 @@ public static class PluginLoader
 
                     plugin.Register(tools);
                     loaded.Add($"{plugin.Name} ({dll})");
-                    AuximLog.Info($"plugin.loaded name={plugin.Name} path={dll}");
+                    AuximLog.Warning(
+                        $"plugin.loaded name={plugin.Name} path={dll} trust=trusted-in-process sandboxed=false");
                 }
             }
             catch (Exception exception)

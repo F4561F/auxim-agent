@@ -1,3 +1,5 @@
+using Auxim.Core.Resources;
+
 namespace Auxim.Core.Tools;
 
 public sealed record ToolDefinition(
@@ -15,4 +17,14 @@ public sealed record ToolDefinition(
             ["properties"] = new Dictionary<string, object?>(),
             ["additionalProperties"] = true,
         };
+
+    /// <summary>
+    /// Declares argument-specific resource access for approval and audit. This
+    /// declaration does not sandbox the handler or reduce host process rights.
+    /// </summary>
+    public Func<IReadOnlyDictionary<string, object?>, IReadOnlyList<ResourceAccess>>? ResourceAccessResolver { get; init; }
+
+    public IReadOnlyList<ResourceAccess> ResolveResourceAccesses(
+        IReadOnlyDictionary<string, object?> arguments) =>
+        ResourceAccessResolver?.Invoke(arguments) ?? [];
 }

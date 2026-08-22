@@ -1,31 +1,26 @@
-using Auxim.Core.Config;
-using Auxim.Core.State;
-using Auxim.VAFS;
-using Auxim.Tools;
+using Auxim.Core.Runtime;
 
 namespace Auxim.Cli;
 
 public static partial class CommandHandlers
 {
-    public static int HandleDoctor()
+    public static int HandleDoctor(IAuximRuntime runtime)
     {
-        var config = ConfigLoader.Load();
-        var registry = BuiltInTools.CreateDefaultRegistry();
-        var keyName = ApiKeyNameForProvider(config.Model.Provider);
+        var diagnostics = runtime.GetDiagnostics();
         Console.WriteLine("Auxim Doctor");
-        Console.WriteLine($"Home:        {ConfigLoader.GetAuximHome()}");
-        Console.WriteLine($"Config:      {ConfigLoader.GetConfigPath()} {(File.Exists(ConfigLoader.GetConfigPath()) ? "ok" : "missing")}");
-        Console.WriteLine($"Env:         {ConfigLoader.GetEnvPath()} {(File.Exists(ConfigLoader.GetEnvPath()) ? "ok" : "missing")}");
-        Console.WriteLine($"Provider:    {config.Model.Provider}");
-        Console.WriteLine($"Model:       {config.Model.Name}");
-        Console.WriteLine($"Base URL:    {config.Model.BaseUrl ?? "(default)"}");
-        Console.WriteLine($"API key:     {FormatApiKeyStatus(config.Model.Provider, keyName)}");
-        Console.WriteLine($"Tools:       {registry.List().Count}");
-        Console.WriteLine($"Workspace:   {VirtualAgentFileSystem.FromEnvironment().ListMounts().First(mount => mount.Name == "workspace").VirtualPath}");
-        Console.WriteLine($"Mounts:      {VirtualAgentFileSystem.FromEnvironment().ListMounts().Count - 1}");
-        Console.WriteLine("Shell:       VAShell policy");
-        Console.WriteLine($"Sessions:    {new SessionStore().List().Count}");
-        Console.WriteLine($"Log file:    {Path.Combine(ConfigLoader.GetAuximHome(), "logs", "agent.log")}");
+        Console.WriteLine($"Home:        {diagnostics.Paths.HomeDirectory}");
+        Console.WriteLine($"Config:      {diagnostics.Paths.ConfigPath} {(diagnostics.ConfigExists ? "ok" : "missing")}");
+        Console.WriteLine($"Env:         {diagnostics.Paths.SecretsPath} {(diagnostics.SecretsExist ? "ok" : "missing")}");
+        Console.WriteLine($"Provider:    {diagnostics.Model.Provider}");
+        Console.WriteLine($"Model:       {diagnostics.Model.Model}");
+        Console.WriteLine($"Base URL:    {diagnostics.Model.BaseUrl ?? "(default)"}");
+        Console.WriteLine($"API key:     {FormatApiKeyStatus(diagnostics.Credential)}");
+        Console.WriteLine($"Tools:       {diagnostics.ToolCount}");
+        Console.WriteLine($"Workspace:   {diagnostics.WorkspaceVirtualPath}");
+        Console.WriteLine($"Mounts:      {diagnostics.MountCount}");
+        Console.WriteLine($"Shell:       {diagnostics.ShellPolicy}");
+        Console.WriteLine($"Sessions:    {diagnostics.SessionCount}");
+        Console.WriteLine($"Log file:    {diagnostics.Paths.LogPath}");
         return 0;
     }
 }

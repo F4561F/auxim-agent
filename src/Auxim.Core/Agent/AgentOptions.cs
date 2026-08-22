@@ -1,4 +1,5 @@
 using Auxim.Core.Approval;
+using Auxim.Core.Runtime;
 
 namespace Auxim.Core.Agent;
 
@@ -8,7 +9,8 @@ public sealed class AgentOptions
     public string Model { get; init; } = "placeholder";
     public int MaxIterations { get; init; } = 90;
     public IReadOnlyList<string> EnabledToolsets { get; init; } = ["core"];
-    public Action<ToolEvent>? ToolEventSink { get; init; }
-    public Action<string>? ContentDeltaSink { get; init; }
-    public ApprovalUIPrompt? ApprovalPrompt { get; init; }
+    public AuximRunId RunId { get; init; } = AuximRunId.New();
+    public string HomeDirectory { get; init; } = "";
+    public IApprovalHandler ApprovalHandler { get; init; } = NonInteractiveApprovalHandler.Instance;
+    public IRuntimeEventSink? EventSink { get; init; }
 }

@@ -1,88 +1,120 @@
 using System.Text.Json;
 using Auxim.Core.Config;
+using Auxim.Core.Resources;
+using Auxim.Core.Runtime;
 
 namespace Auxim.Core.Approval;
 
-/// <summary>
-/// Delegate that prompts the user for tool approval in an interactive terminal.
-/// Returns the approval decision together with a flag indicating whether the
-/// user chose "always allow" (so the store can persist it).
-/// </summary>
-public delegate (ToolApprovalDecision Decision, bool AlwaysAllow) ApprovalUIPrompt(
-    string toolName,
-    IReadOnlyDictionary<string, object?> arguments);
-
 public sealed class ToolApprovalService
 {
-    private static readonly HashSet<string> HighRiskTools = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "shell.run",
-        "file.write",
-        "file.patch",
-        "todo.done",
-    };
-
     private readonly string _storePath;
-    private readonly ApprovalUIPrompt? _uiPrompt;
 
-    /// <param name="uiPrompt">
-    /// Optional interactive prompt. When null the service operates in
-    /// non-interactive mode and always denies high-risk tools.
-    /// </param>
-    public ToolApprovalService(ApprovalUIPrompt? uiPrompt = null, string? home = null)
+    public ToolApprovalService(string? home = null)
     {
-        _uiPrompt = uiPrompt;
         home ??= ConfigLoader.GetAuximHome();
         _storePath = Path.Combine(home, "approvals.json");
     }
 
-    public ToolApprovalDecision Review(string toolName, IReadOnlyDictionary<string, object?> arguments)
+    public async Task<ApprovalResponse> ReviewAsync(
+        AuximRunId runId,
+        string toolName,
+        IReadOnlyDictionary<string, object?> arguments,
+        IReadOnlyList<ResourceAccess> resourceAccesses,
+        IApprovalHandler approvalHandler,
+        IRuntimeEventSink eventSink,
+        CancellationToken cancellationToken)
     {
-        if (!HighRiskTools.Contains(toolName))
+        var protectedAccesses = resourceAccesses
+            .Where(access => access.RequiresApproval)
+            .ToArray();
+        if (protectedAccesses.Length == 0)
         {
-            return ToolApprovalDecision.Allow;
+            return ApprovalResponse.Allow();
         }
 
         var store = LoadStore();
-        if (store.AlwaysAllowedTools.Contains(toolName, StringComparer.OrdinalIgnoreCase))
+        if (IsGranted(store, toolName, protectedAccesses))
         {
-            return ToolApprovalDecision.Allow;
+            return ApprovalResponse.Allow();
         }
 
-        if (_uiPrompt is not null)
+        var request = new ApprovalRequest(
+            Guid.NewGuid().ToString("N"),
+            runId.Value,
+            toolName,
+            arguments,
+            protectedAccesses);
+        await eventSink.PublishAsync(
+            new RuntimeApprovalRequestedEvent(
+                RuntimeEventFactory.NewEventId(),
+                RuntimeEventFactory.Now(),
+                runId,
+                request),
+            cancellationToken);
+
+        var response = await approvalHandler.RequestAsync(request, cancellationToken);
+        if (response.Approved && response.Remember)
         {
-            var (decision, alwaysAllow) = _uiPrompt(toolName, arguments);
-            if (alwaysAllow)
+            foreach (var access in protectedAccesses)
             {
-                store.AlwaysAllowedTools.Add(toolName);
-                SaveStore(store);
+                if (store.Grants.Any(grant => Matches(grant, access)))
+                {
+                    continue;
+                }
+
+                store.Grants.Add(new ApprovalGrant(
+                    Guid.NewGuid().ToString("N"),
+                    access.Action,
+                    access.Resource,
+                    toolName));
             }
 
-            return decision;
+            SaveStore(store);
         }
 
-        // Non-interactive fallback: always deny high-risk tools when no UI is attached.
-        return ToolApprovalDecision.Deny(
-            "Tool approval is required, but the process is not attached to an interactive terminal.");
+        await eventSink.PublishAsync(
+            new RuntimeApprovalResolvedEvent(
+                RuntimeEventFactory.NewEventId(),
+                RuntimeEventFactory.Now(),
+                runId,
+                request.RequestId,
+                response.Approved,
+                response.Approved && response.Remember,
+                response.Reason),
+            cancellationToken);
+        return response;
     }
 
-    public IReadOnlyList<string> ListAlwaysAllowedTools()
+    public IReadOnlyList<ApprovalGrant> ListGrants()
     {
-        return LoadStore().AlwaysAllowedTools
-            .OrderBy(tool => tool, StringComparer.OrdinalIgnoreCase)
+        var store = LoadStore();
+        var grants = store.Grants.ToList();
+        grants.AddRange(store.AlwaysAllowedTools.Select(tool => new ApprovalGrant(
+            $"legacy:{tool}",
+            new ResourceAction("legacy-tool"),
+            ResourceUri.Opaque("tool", tool),
+            tool)));
+        return grants
+            .OrderBy(grant => grant.Action.Value, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(grant => grant.Resource.Value, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 
-    public void ClearAlwaysAllowedTools()
-    {
-        SaveStore(new ApprovalStore());
-    }
+    public void ClearGrants() => SaveStore(new ApprovalStore());
 
-    public bool RevokeAlwaysAllowedTool(string toolName)
+    public bool RevokeGrant(string id)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
         var store = LoadStore();
-        var removed = store.AlwaysAllowedTools.RemoveAll(
-            tool => string.Equals(tool, toolName, StringComparison.OrdinalIgnoreCase)) > 0;
+        var removed = store.Grants.RemoveAll(
+            grant => string.Equals(grant.Id, id, StringComparison.OrdinalIgnoreCase)) > 0;
+        if (id.StartsWith("legacy:", StringComparison.OrdinalIgnoreCase))
+        {
+            var toolName = id["legacy:".Length..];
+            removed |= store.AlwaysAllowedTools.RemoveAll(
+                tool => string.Equals(tool, toolName, StringComparison.OrdinalIgnoreCase)) > 0;
+        }
+
         if (removed)
         {
             SaveStore(store);
@@ -90,6 +122,23 @@ public sealed class ToolApprovalService
 
         return removed;
     }
+
+    private static bool IsGranted(
+        ApprovalStore store,
+        string toolName,
+        IReadOnlyList<ResourceAccess> accesses)
+    {
+        if (store.AlwaysAllowedTools.Contains(toolName, StringComparer.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return accesses.All(access => store.Grants.Any(grant => Matches(grant, access)));
+    }
+
+    private static bool Matches(ApprovalGrant grant, ResourceAccess access) =>
+        string.Equals(grant.Action.Value, access.Action.Value, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(grant.Resource.Value, access.Resource.Value, StringComparison.OrdinalIgnoreCase);
 
     private ApprovalStore LoadStore()
     {
@@ -100,10 +149,11 @@ public sealed class ToolApprovalService
 
         try
         {
-            var json = File.ReadAllText(_storePath);
-            return JsonSerializer.Deserialize<ApprovalStore>(json, JsonOptions()) ?? new ApprovalStore();
+            return JsonSerializer.Deserialize<ApprovalStore>(
+                File.ReadAllText(_storePath),
+                JsonOptions()) ?? new ApprovalStore();
         }
-        catch
+        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
         {
             return new ApprovalStore();
         }
@@ -112,7 +162,9 @@ public sealed class ToolApprovalService
     private void SaveStore(ApprovalStore store)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_storePath) ?? ".");
-        File.WriteAllText(_storePath, JsonSerializer.Serialize(store, JsonOptions()) + Environment.NewLine);
+        File.WriteAllText(
+            _storePath,
+            JsonSerializer.Serialize(store, JsonOptions()) + Environment.NewLine);
     }
 
     private static JsonSerializerOptions JsonOptions() => new()
@@ -123,13 +175,10 @@ public sealed class ToolApprovalService
     };
 }
 
-public sealed record ToolApprovalDecision(bool Approved, string Reason)
-{
-    public static ToolApprovalDecision Allow { get; } = new(true, "");
-    public static ToolApprovalDecision Deny(string reason) => new(false, reason);
-}
-
 public sealed class ApprovalStore
 {
+    public List<ApprovalGrant> Grants { get; set; } = [];
+
+    // Read-only compatibility for approvals.json created before resource grants.
     public List<string> AlwaysAllowedTools { get; set; } = [];
 }

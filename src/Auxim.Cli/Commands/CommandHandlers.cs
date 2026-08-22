@@ -1,9 +1,4 @@
-using System.Text.Json;
-using Auxim.Core.Config;
-using Auxim.Core.State;
-using Auxim.Core.Approval;
-using Auxim.VAFS;
-using Auxim.Tools;
+using Auxim.Core.Runtime;
 
 namespace Auxim.Cli;
 
@@ -238,27 +233,12 @@ public static partial class CommandHandlers
         return new ProviderChoice(id, $"Custom ({id})", baseUrl, [], IsCustom: true);
     }
 
-    public static string ApiKeyNameForProvider(string provider)
-    {
-        return ProviderCatalog.ApiKeyNameForProvider(provider);
-    }
-
-    public static bool RequiresApiKey(string provider)
-    {
-        return ProviderCatalog.RequiresApiKey(provider);
-    }
-
-    private static string FormatApiKeyStatus(string provider, string keyName)
-    {
-        if (!RequiresApiKey(provider))
-        {
-            return "not required";
-        }
-
-        return DotEnvStore.HasValue(keyName) || DotEnvStore.HasValue("AUXIM_API_KEY")
-            ? $"set ({keyName})"
-            : $"not set ({keyName})";
-    }
+    private static string FormatApiKeyStatus(AuximCredentialStatus status) =>
+        !status.Required
+            ? "not required"
+            : status.Configured
+                ? $"set ({status.EnvironmentVariable})"
+                : $"not set ({status.EnvironmentVariable})";
 
     private static string SelectModel(ProviderChoice provider, string currentModel)
     {
@@ -321,43 +301,6 @@ public static partial class CommandHandlers
         return value.Trim().Equals("y", StringComparison.OrdinalIgnoreCase)
             || value.Trim().Equals("yes", StringComparison.OrdinalIgnoreCase)
             || value.Trim().Equals("true", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string WorkspaceHostPath(AuximConfig config)
-    {
-        var environment = Environment.GetEnvironmentVariable("AUXIM_WORKSPACE");
-        if (!string.IsNullOrWhiteSpace(environment))
-        {
-            return Path.GetFullPath(ExpandHome(environment));
-        }
-
-        return string.IsNullOrWhiteSpace(config.Sandbox.Workspace)
-            ? Path.GetFullPath(Environment.CurrentDirectory)
-            : Path.GetFullPath(ExpandHome(config.Sandbox.Workspace));
-    }
-
-    private static string ExpandHome(string path)
-    {
-        if (path == "~")
-        {
-            return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        }
-
-        if (path.StartsWith("~/", StringComparison.Ordinal))
-        {
-            return Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                path[2..]);
-        }
-
-        return path;
-    }
-
-    private static bool IsValidMountName(string name)
-    {
-        return !string.IsNullOrWhiteSpace(name)
-            && name.All(character => char.IsLetterOrDigit(character) || character is '-' or '_')
-            && name is not "." and not "..";
     }
 
     private static void PrintPanel(string title, IReadOnlyList<string> lines)

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Auxim.Core.Config;
 using Auxim.Core.Tools;
+using Auxim.Core.Resources;
 
 namespace Auxim.Tools;
 
@@ -23,6 +24,8 @@ public static class TodoTools
             })
         {
             ParametersSchema = FileTools.ObjectSchema([("text", "string", "Todo text.")], ["text"]),
+            ResourceAccessResolver = _ =>
+                [new ResourceAccess(ResourceAction.Write, new ResourceUri("auxim:todos"))],
         });
 
         registry.Register(new ToolDefinition(
@@ -39,7 +42,11 @@ public static class TodoTools
 
                 return Task.FromResult(string.Join(Environment.NewLine, todos.Select(todo =>
                     $"{(todo.Done ? "x" : " ")} {todo.Id} {todo.Text}")));
-            }));
+            })
+        {
+            ResourceAccessResolver = _ =>
+                [new ResourceAccess(ResourceAction.Read, new ResourceUri("auxim:todos"))],
+        });
 
         registry.Register(new ToolDefinition(
             "todo.done",
@@ -57,6 +64,11 @@ public static class TodoTools
             })
         {
             ParametersSchema = FileTools.ObjectSchema([("id", "string", "Todo id.")], ["id"]),
+            ResourceAccessResolver = args =>
+                [new ResourceAccess(
+                    ResourceAction.Write,
+                    ResourceUri.Opaque("auxim-todo", FileTools.Required(args, "id")),
+                    RequiresApproval: true)],
         });
     }
 

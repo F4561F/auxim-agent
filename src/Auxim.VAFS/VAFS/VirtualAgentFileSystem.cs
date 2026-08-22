@@ -65,6 +65,8 @@ public sealed class VirtualAgentFileSystem
             throw new VirtualPathException($"Path '{path}' escapes virtual mount '{mount.VirtualPath}'.");
         }
 
+        EnsurePhysicalPathInsideMount(mount, hostPath, path);
+
         return hostPath;
     }
 
@@ -227,6 +229,42 @@ public sealed class VirtualAgentFileSystem
         return string.Equals(parent, path, PathComparison)
             || path.StartsWith(parent + Path.DirectorySeparatorChar, PathComparison)
             || path.StartsWith(parent + Path.AltDirectorySeparatorChar, PathComparison);
+    }
+
+    private static void EnsurePhysicalPathInsideMount(
+        VirtualMount mount,
+        string hostPath,
+        string virtualPath)
+    {
+        var physicalRoot = ResolveExistingTarget(mount.HostPath);
+        var relative = Path.GetRelativePath(mount.HostPath, hostPath);
+        var current = mount.HostPath;
+        foreach (var segment in relative.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, segment);
+            if (!File.Exists(current) && !Directory.Exists(current))
+            {
+                break;
+            }
+
+            var physicalCurrent = ResolveExistingTarget(current);
+            if (!IsSameOrChildPath(physicalRoot, physicalCurrent))
+            {
+                throw new VirtualPathException(
+                    $"Path '{virtualPath}' escapes virtual mount '{mount.VirtualPath}' through a symbolic link.");
+            }
+        }
+    }
+
+    private static string ResolveExistingTarget(string path)
+    {
+        FileSystemInfo info = Directory.Exists(path)
+            ? new DirectoryInfo(path)
+            : new FileInfo(path);
+        return Path.GetFullPath(
+            info.ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? info.FullName);
     }
 
     private static bool HasWindowsDrivePrefix(string path) =>

@@ -1,28 +1,27 @@
-using Auxim.Core.Config;
+using Auxim.Core.Runtime;
 
 namespace Auxim.Cli;
 
 public static partial class CommandHandlers
 {
-    public static int HandleAuth(IReadOnlyList<string> args)
+    public static int HandleAuth(IReadOnlyList<string> args, IAuximRuntime runtime)
     {
         var subcommand = args.FirstOrDefault() ?? "status";
         return subcommand switch
         {
-            "path" => PrintPath(ConfigLoader.GetEnvPath()),
-            "status" => AuthStatus(),
-            "set-api-key" => SetApiKey(args.Skip(1).FirstOrDefault()),
+            "path" => PrintPath(runtime.GetApplicationPaths().SecretsPath),
+            "status" => AuthStatus(runtime),
+            "set-api-key" => SetApiKey(args.Skip(1).FirstOrDefault(), runtime),
             _ => PrintAuthHelp(),
         };
     }
 
-    private static int SetApiKey(string? key)
+    private static int SetApiKey(string? key, IAuximRuntime runtime)
     {
-        var config = ConfigLoader.Load();
-        var keyName = ApiKeyNameForProvider(config.Model.Provider);
-        if (!RequiresApiKey(config.Model.Provider))
+        var status = runtime.GetCredentialStatus();
+        if (!status.Required)
         {
-            Console.WriteLine($"{config.Model.Provider} does not require an API key by default.");
+            Console.WriteLine($"{status.Provider} does not require an API key by default.");
             return 0;
         }
 
@@ -33,18 +32,17 @@ public static partial class CommandHandlers
             return 1;
         }
 
-        DotEnvStore.SetValue(keyName, key);
-        Console.WriteLine($"{keyName} saved to {ConfigLoader.GetEnvPath()}");
+        runtime.SetApiKey(status.Provider, key);
+        Console.WriteLine($"{status.EnvironmentVariable} saved to {status.SecretsPath}");
         return 0;
     }
 
-    private static int AuthStatus()
+    private static int AuthStatus(IAuximRuntime runtime)
     {
-        var config = ConfigLoader.Load();
-        var keyName = ApiKeyNameForProvider(config.Model.Provider);
-        Console.WriteLine($"Env file: {ConfigLoader.GetEnvPath()}");
-        Console.WriteLine($"Provider: {config.Model.Provider}");
-        Console.WriteLine($"API key:  {FormatApiKeyStatus(config.Model.Provider, keyName)}");
+        var status = runtime.GetCredentialStatus();
+        Console.WriteLine($"Env file: {status.SecretsPath}");
+        Console.WriteLine($"Provider: {status.Provider}");
+        Console.WriteLine($"API key:  {FormatApiKeyStatus(status)}");
         return 0;
     }
 

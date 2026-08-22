@@ -1,17 +1,19 @@
-using Auxim.Tools;
+using Auxim.Core.Runtime;
+using Auxim.Cli.Interactive;
 
 namespace Auxim.Cli;
 
 public static partial class CommandHandlers
 {
-    public static async Task<int> HandleTool(IReadOnlyList<string> args)
+    public static async Task<int> HandleTool(
+        IReadOnlyList<string> args,
+        IAuximRuntime runtime)
     {
         var subcommand = args.FirstOrDefault() ?? "list";
-        var registry = BuiltInTools.CreateDefaultRegistry();
         switch (subcommand)
         {
             case "list":
-                foreach (var tool in registry.List().OrderBy(tool => tool.Name))
+                foreach (var tool in runtime.ListTools())
                 {
                     Console.WriteLine($"{tool.Name} [{tool.Toolset}] - {tool.Description}");
                 }
@@ -25,7 +27,10 @@ public static partial class CommandHandlers
 
                 var toolName = args[1];
                 var toolArgs = ParseKeyValueArgs(args.Skip(2));
-                Console.WriteLine(await registry.InvokeAsync(toolName, toolArgs));
+                Console.WriteLine(await runtime.InvokeToolAsync(
+                    toolName,
+                    toolArgs,
+                    new AuximRuntimeOptions { ApprovalHandler = new CliApprovalHandler() }));
                 return 0;
             default:
                 return PrintToolHelp();

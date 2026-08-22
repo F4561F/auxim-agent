@@ -1,7 +1,7 @@
 using System.Text.Json;
-using Auxim.Core.Approval;
+using Auxim.Core.Config;
 using Auxim.Core.Tools;
-using Auxim.Core.Logging;
+using Auxim.Core.Runtime;
 using Auxim.VAFS;
 
 namespace Auxim.Core.Agent;
@@ -11,14 +11,22 @@ public sealed class AuximAgent
     private readonly IAgentClient _client;
     private readonly ToolRegistry _tools;
     private readonly AgentOptions _options;
-    private readonly ToolApprovalService _approval;
+    private readonly IRuntimeEventSink _eventSink;
+    private readonly ToolExecutionCoordinator _toolExecution;
 
     public AuximAgent(IAgentClient client, ToolRegistry tools, AgentOptions? options = null)
     {
         _client = client;
         _tools = tools;
         _options = options ?? new AgentOptions();
-        _approval = new ToolApprovalService(_options.ApprovalPrompt);
+        _eventSink = _options.EventSink ?? NullRuntimeEventSink.Instance;
+        _toolExecution = new ToolExecutionCoordinator(
+            tools,
+            string.IsNullOrWhiteSpace(_options.HomeDirectory)
+                ? ConfigLoader.GetAuximHome()
+                : _options.HomeDirectory,
+            _options.ApprovalHandler,
+            _eventSink);
     }
 
     public async Task<string> ChatAsync(string message, CancellationToken cancellationToken = default)
@@ -92,11 +100,7 @@ public sealed class AuximAgent
             var deniedCalls = new List<ToolInvocationResult>();
             foreach (var call in completion.ToolCalls)
             {
-                AuximLog.Info($"tool.start name={call.Name} args={call.ArgumentsJson}");
-                _options.ToolEventSink?.Invoke(new ToolEvent("start", call.Name, call.ArgumentsJson));
                 var result = await InvokeToolCallAsync(call, cancellationToken);
-                AuximLog.Info($"tool.done name={call.Name} chars={result.Content.Length}");
-                _options.ToolEventSink?.Invoke(new ToolEvent("done", call.Name, $"{result.Content.Length} chars"));
                 messages.Add(new AgentMessage("tool", result.Content)
                 {
                     Name = call.Name,
@@ -126,12 +130,18 @@ public sealed class AuximAgent
         IReadOnlyList<ToolDefinition> tools,
         CancellationToken cancellationToken)
     {
-        if (_options.ContentDeltaSink is not null && client is IStreamingToolCallingAgentClient streamingClient)
+        if (_options.EventSink is not null && client is IStreamingToolCallingAgentClient streamingClient)
         {
             return streamingClient.CompleteWithToolsStreamingAsync(
                 messages,
                 tools,
-                _options.ContentDeltaSink,
+                (delta, token) => _eventSink.PublishAsync(
+                    new RuntimeContentDeltaEvent(
+                        RuntimeEventFactory.NewEventId(),
+                        RuntimeEventFactory.Now(),
+                        _options.RunId,
+                        delta),
+                    token),
                 cancellationToken);
         }
 
@@ -144,22 +154,25 @@ public sealed class AuximAgent
         {
             var args = ParseArguments(call.ArgumentsJson);
             var toolName = ResolveToolName(call.Name);
-            var approval = _approval.Review(toolName, args);
-            if (!approval.Approved)
+            var execution = await _toolExecution.ExecuteAsync(
+                _options.RunId,
+                call.Id,
+                toolName,
+                args,
+                cancellationToken);
+            if (execution.WasDenied)
             {
                 var content = JsonSerializer.Serialize(new
                 {
                     denied = true,
                     tool = toolName,
-                    userFeedback = approval.Reason,
+                    userFeedback = execution.Feedback,
                     instruction = "Respect the user's decision. Continue without this tool or propose a safer alternative.",
                 });
-                return ToolInvocationResult.DeniedResult(toolName, content, approval.Reason);
+                return ToolInvocationResult.DeniedResult(toolName, content, execution.Feedback);
             }
 
-            return ToolInvocationResult.Allowed(
-                toolName,
-                await _tools.InvokeAsync(toolName, args, cancellationToken));
+            return ToolInvocationResult.Allowed(toolName, execution.Content);
         }
         catch (Exception exception)
         {

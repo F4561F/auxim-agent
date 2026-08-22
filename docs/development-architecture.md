@@ -10,7 +10,7 @@ rule is: keep frontend code at the edge, keep agent orchestration behind
 Auxim.Core        kernel-like runtime layer
 IAuximRuntime    stable syscall-like application boundary
 Auxim.Cli        terminal frontend
-Auxim.Gateway    future HTTP/WebSocket/platform frontend
+Auxim.Gateway    HTTP/SSE host with SDK and connector source modules
 Auxim.Tools      built-in capability adapters
 Auxim.VAFS       virtual filesystem and controlled agent shell
 ```
@@ -30,7 +30,8 @@ Core owns shared runtime concepts:
   `AuximRuntimeService`.
 - `Config/`: config files, `.env`, provider API-key naming, runtime mode.
 - `State/`: session documents and current session pointer.
-- `Approval/`: high-risk tool approval policy and persisted allow-list.
+- `Approval/`: asynchronous frontend approval contract and persisted resource grants.
+- `Resources/`: stable `ResourceAction`, `ResourceUri`, and access declarations.
 - `Tools/`: `ToolDefinition` and `ToolRegistry` abstractions.
 - `Plugins/`: runtime plugin contract and DLL discovery.
 - `Logging/`: local log helpers.
@@ -63,7 +64,9 @@ Tools owns built-in capabilities exposed to the agent:
 - core utilities such as time and echo
 
 Tools should use `ToolDefinition` and `ToolRegistry` from Core. Tools may depend
-on VAFS when they touch files or commands. Tools should not depend on CLI UI.
+on VAFS when they touch files or commands. Every resource-using Tool should add
+an argument-specific `ResourceAccessResolver`. The declaration is approval and
+audit metadata, not a sandbox. Tools should not depend on CLI UI.
 
 ### Auxim.Cli
 
@@ -76,18 +79,45 @@ CLI owns terminal concerns:
 - approval UI
 - terminal Markdown rendering
 
-CLI should call `IAuximRuntime` for chat-like work. It should not duplicate
-agent/session/tool orchestration. Terminal-only actions, such as shell escape
-with `//`, can stay in CLI.
+CLI must call `IAuximRuntime` for every application operation, including
+configuration, credentials, approvals, sandbox state, tools, sessions, chat,
+input history, and host commands. Terminal parsing, prompting, selection, and
+rendering remain in CLI; the `//` syntax is terminal UI, but command execution
+belongs to the runtime.
 
 ### Auxim.Gateway
 
-Gateway is the place for non-terminal platform adapters. A future Web frontend
-should connect to Gateway over HTTP or WebSocket. Gateway should translate
-requests into `IAuximRuntime` calls and stream runtime events back to the
-client.
+Gateway is the HTTP/SSE boundary for non-terminal platform adapters. A future
+Web frontend should connect to Gateway over HTTP or Server-Sent Events.
+Gateway translates requests into `IAuximRuntime` calls and streams runtime
+events back to the client.
+
+Gateway exposes status, tool discovery, session management, blocking chat, and
+SSE streaming chat endpoints. Browser-facing apps can opt into bearer-token
+auth with `AUXIM_GATEWAY_TOKEN` and explicit CORS origins with
+`AUXIM_GATEWAY_CORS_ORIGINS`.
+
+Gateway route handlers must not instantiate or access configuration stores,
+credential stores, approval stores, VAFS, `ToolRegistry`, `SessionStore`, or
+other application infrastructure. External conversation mapping and its
+persistence also belong to `IAuximRuntime`.
+
+Messaging integrations should use the generic `/v1/messages` connector
+boundary first. External adapters can use that HTTP API, while built-in
+connectors live under `Auxim.Gateway/Connectors` and call
+`IAuximRuntime.SendExternalMessageAsync` directly. Each connector owns its
+platform credentials, allow-lists, polling or webhook mechanics, and reply
+formatting. The runtime owns the stable mapping from external conversations to
+Auxim sessions.
 
 Gateway should not depend on `Auxim.Cli`.
+
+### Gateway SDK module
+
+The `Auxim.Gateway/SDK` source module should stay client-only and continue to
+model Gateway's public protocol rather than Core runtime services. It shares
+the Gateway project and assembly for now, while its `Auxim.SDK` namespace keeps
+the client API distinct from host internals.
 
 ## Runtime Boundary
 
@@ -96,6 +126,30 @@ The runtime boundary currently starts with:
 ```csharp
 public interface IAuximRuntime
 {
+    AuximApplicationPaths GetApplicationPaths();
+    string GetConfigJson();
+    void SetConfigValue(...);
+    AuximModelSettings GetModelSettings();
+    AuximModelSettings SetModelSettings(...);
+    AuximCredentialStatus GetCredentialStatus(...);
+    void SetApiKey(...);
+    AuximSandboxStatus GetSandboxStatus();
+    AuximDiagnostics GetDiagnostics();
+    IReadOnlyList<string> LoadInputHistory();
+    void SaveInputHistory(...);
+    Task<int> RunHostCommandAsync(...);
+    AuximRuntimeStatus GetStatus();
+    IReadOnlyList<AuximRuntimeTool> ListTools();
+    Task<string> InvokeToolAsync(...);
+    IReadOnlyList<ResourceAccess> ResolveToolResourceAccesses(...);
+    IReadOnlyList<AuximRuntimeSessionSummary> ListSessions();
+    AuximRuntimeSession GetOrCreateCurrentSession();
+    AuximRuntimeSession? GetSession(string id);
+    AuximRuntimeSession CreateSession(...);
+    AuximRuntimeSession? UseSession(string id);
+    void ClearCurrentSession();
+    IReadOnlyList<AuximExternalConversation> ListExternalConversations();
+    Task<AuximExternalMessageResult> SendExternalMessageAsync(...);
     Task<AuximChatResult> ChatAsync(
         AuximChatRequest request,
         AuximRuntimeOptions? options = null,
@@ -103,28 +157,36 @@ public interface IAuximRuntime
 }
 ```
 
-`AuximRuntimeService` performs the common orchestration:
+`AuximRuntimeService` owns the shared operations:
 
-1. Load config.
-2. Create the model client.
-3. Create the tool registry.
-4. Open or create the current session.
-5. Build `AgentOptions`.
-6. Run `AuximAgent`.
-7. Append the turn to session state.
+1. Read and update configuration, credentials, approvals, and sandbox state.
+2. Own CLI history and host-command execution requested by terminal syntax.
+3. Discover and invoke tools through the configured registry factory.
+4. List, search, create, select, and clear sessions.
+5. Persist external conversation mappings and dispatch external messages.
+6. Create the model client and `AgentOptions`.
+7. Run `AuximAgent` and append turns to session state.
 
-Frontends can provide callbacks in `AuximRuntimeOptions` for content deltas,
-tool events, and approvals.
+`AuximRuntimeOptions` accepts one `IRuntimeEventSink` and one asynchronous
+`IApprovalHandler`. Content deltas, Tool lifecycle, approval lifecycle, and Run
+lifecycle all use the same structured event stream. Runtime logging is another
+consumer of that stream rather than a separate Agent callback.
+
+`AuximRunId` identifies one execution. It is distinct from a conversation
+Session ID. Runtime events are transient and are not appended to Session
+documents; this reserves a clean boundary for a future Run model without
+implementing a Run Engine now.
 
 ## Adding A New Frontend
 
-For a Web UI, do not call CLI code. Add an adapter under Gateway that:
+For a Web UI, do not call CLI code. Connect to Gateway or add an adapter under
+Gateway that:
 
-1. Accepts HTTP/WebSocket requests.
+1. Accepts HTTP/SSE requests.
 2. Converts them to `AuximChatRequest`.
 3. Calls `IAuximRuntime.ChatAsync`.
-4. Converts content deltas, tool events, and approval prompts to protocol
-   messages.
+4. Converts structured `RuntimeEvent` values to protocol messages and implements
+   an asynchronous approval handler when the frontend supports interaction.
 5. Sends the final `AuximChatResult` back to the client.
 
 The dependency direction should look like this:
@@ -142,10 +204,16 @@ Guidelines:
 
 - Use VAFS for all file paths.
 - Return virtual paths, not host paths.
-- Add an approval requirement in `ToolApprovalService` if the tool writes,
-  runs commands, changes state, or can cause external side effects.
+- Resolve actual `ResourceAction + ResourceUri` values after arguments are known.
+- Mark the relevant access declaration approval-required when preserving or
+  adding current policy behavior.
 - Keep parameter schemas explicit and narrow.
 - Add focused tests for path safety and error behavior.
+
+Native DLL plugins are trusted in-process extensions. Their handlers execute
+with Auxim's host permissions and can bypass VAFS unless plugin code explicitly
+uses it. Never describe DLL plugins as sandboxed; resource declarations do not
+enforce process isolation.
 
 ## Adding Runtime Features
 
@@ -169,7 +237,7 @@ business operation should be reusable.
 - `Auxim.Core` still contains both core primitives and agent runtime. If the
   agent loop grows significantly, a future `Auxim.Agent` project could split
   agent orchestration out of Core.
-- `Auxim.Gateway` is still a placeholder. The runtime boundary is the first
-  step toward making Gateway and Web frontends straightforward.
+- `Auxim.Gateway` exposes the runtime over HTTP/SSE and contains its SDK and
+  built-in connector source modules in one project.
 - Provider API-key naming is shared in Core. The rich interactive provider menu
   still lives in CLI because it is terminal UX.

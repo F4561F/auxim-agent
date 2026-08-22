@@ -1,4 +1,5 @@
 using Auxim.Core.Tools;
+using Auxim.Core.Resources;
 using Auxim.VAFS;
 
 namespace Auxim.Tools;
@@ -32,6 +33,11 @@ public static class ShellTools
                     ("timeoutSeconds", "integer", "Timeout in seconds, capped at 300."),
                 ],
                 ["command"]),
+            ResourceAccessResolver = args =>
+                [new ResourceAccess(
+                    ResourceAction.Execute,
+                    ResourceUri.Opaque("vashell", FileTools.Required(args, "command")),
+                    RequiresApproval: true)],
         });
     }
 }

@@ -1,54 +1,48 @@
-using Auxim.Core.Config;
-using Auxim.VAFS;
+using Auxim.Core.Runtime;
 
 namespace Auxim.Cli;
 
 public static partial class CommandHandlers
 {
-    public static int HandleSandbox(IReadOnlyList<string> args)
+    public static int HandleSandbox(IReadOnlyList<string> args, IAuximRuntime runtime)
     {
         var subcommand = args.FirstOrDefault() ?? "show";
         return subcommand switch
         {
-            "show" => ShowSandbox(),
-            "workspace" => SetSandboxWorkspace(args.Skip(1).FirstOrDefault()),
-            "mount" => MountSandboxVolume(args.Skip(1).ToArray()),
-            "unmount" => UnmountSandboxVolume(args.Skip(1).FirstOrDefault()),
+            "show" => ShowSandbox(runtime),
+            "workspace" => SetSandboxWorkspace(args.Skip(1).FirstOrDefault(), runtime),
+            "mount" => MountSandboxVolume(args.Skip(1).ToArray(), runtime),
+            "unmount" => UnmountSandboxVolume(args.Skip(1).FirstOrDefault(), runtime),
             _ => PrintSandboxHelp(),
         };
     }
 
-    private static int ShowSandbox()
+    private static int ShowSandbox(IAuximRuntime runtime)
     {
-        var config = ConfigLoader.Load();
-        var vafs = VirtualAgentFileSystem.FromEnvironment();
+        var sandbox = runtime.GetSandboxStatus();
         Console.WriteLine("Auxim Sandbox");
-        Console.WriteLine($"Config:    {ConfigLoader.GetConfigPath()}");
-        Console.WriteLine($"Workspace: /workspace -> {WorkspaceHostPath(config)}");
-        Console.WriteLine($"Temp:      /tmp -> {vafs.ResolveToHostPath("/tmp")}");
+        Console.WriteLine($"Config:    {sandbox.ConfigPath}");
+        Console.WriteLine($"Workspace: /workspace -> {sandbox.WorkspaceHostPath}");
+        Console.WriteLine($"Temp:      /tmp -> {sandbox.TempHostPath}");
         Console.WriteLine("Mounts:");
-
-        var mounts = config.Sandbox.Mounts
-            .OrderBy(mount => mount.Name, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        if (mounts.Length == 0)
+        if (sandbox.Mounts.Count == 0)
         {
             Console.WriteLine("  (none)");
         }
         else
         {
-            foreach (var mount in mounts)
+            foreach (var mount in sandbox.Mounts)
             {
-                Console.WriteLine($"  /volumes/{mount.Name} -> {mount.HostPath}{(mount.ReadOnly ? " (read-only)" : "")}");
+                Console.WriteLine($"  {mount.VirtualPath} -> {mount.HostPath}{(mount.ReadOnly ? " (read-only)" : "")}");
             }
         }
 
         Console.WriteLine();
-        Console.WriteLine(vafs.DescribeForAgent());
+        Console.WriteLine(sandbox.AgentDescription);
         return 0;
     }
 
-    private static int SetSandboxWorkspace(string? path)
+    private static int SetSandboxWorkspace(string? path, IAuximRuntime runtime)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -56,83 +50,28 @@ public static partial class CommandHandlers
             return 1;
         }
 
-        var fullPath = Path.GetFullPath(ExpandHome(path));
-        if (!Directory.Exists(fullPath))
-        {
-            Console.Error.WriteLine($"Directory not found: {fullPath}");
-            return 1;
-        }
-
-        var config = ConfigLoader.Load();
-        var updated = new AuximConfig
-        {
-            Model = config.Model,
-            Agent = config.Agent,
-            Display = config.Display,
-            Sandbox = new SandboxConfig
-            {
-                Workspace = fullPath,
-                Mounts = config.Sandbox.Mounts,
-                Shell = config.Sandbox.Shell,
-            },
-        };
-        ConfigLoader.Save(updated);
-        Console.WriteLine($"Mapped /workspace -> {fullPath}");
+        var sandbox = runtime.SetSandboxWorkspace(path);
+        Console.WriteLine($"Mapped /workspace -> {sandbox.WorkspaceHostPath}");
         return 0;
     }
 
-    private static int MountSandboxVolume(IReadOnlyList<string> args)
+    private static int MountSandboxVolume(IReadOnlyList<string> args, IAuximRuntime runtime)
     {
         if (args.Count < 2)
         {
             return PrintSandboxHelp();
         }
 
-        var name = args[0].Trim();
-        if (!IsValidMountName(name))
-        {
-            Console.Error.WriteLine("Mount name must contain only letters, digits, '-', or '_'.");
-            return 1;
-        }
-
-        var hostPath = Path.GetFullPath(ExpandHome(args[1]));
-        if (!Directory.Exists(hostPath))
-        {
-            Console.Error.WriteLine($"Directory not found: {hostPath}");
-            return 1;
-        }
-
         var readOnly = args.Skip(2).Any(arg =>
             arg.Equals("--read-only", StringComparison.OrdinalIgnoreCase)
             || arg.Equals("--ro", StringComparison.OrdinalIgnoreCase));
-        var config = ConfigLoader.Load();
-        var mounts = config.Sandbox.Mounts
-            .Where(mount => !mount.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        mounts.Add(new SandboxMountConfig
-        {
-            Name = name,
-            HostPath = hostPath,
-            ReadOnly = readOnly,
-        });
-
-        ConfigLoader.Save(new AuximConfig
-        {
-            Model = config.Model,
-            Agent = config.Agent,
-            Display = config.Display,
-            Sandbox = new SandboxConfig
-            {
-                Workspace = config.Sandbox.Workspace,
-                Mounts = mounts,
-                Shell = config.Sandbox.Shell,
-            },
-        });
-        Console.WriteLine($"Mounted /volumes/{name} -> {hostPath}{(readOnly ? " (read-only)" : "")}");
+        var sandbox = runtime.MountSandboxVolume(args[0].Trim(), args[1], readOnly);
+        var mount = sandbox.Mounts.Single(item => item.Name.Equals(args[0], StringComparison.OrdinalIgnoreCase));
+        Console.WriteLine($"Mounted {mount.VirtualPath} -> {mount.HostPath}{(readOnly ? " (read-only)" : "")}");
         return 0;
     }
 
-    private static int UnmountSandboxVolume(string? name)
+    private static int UnmountSandboxVolume(string? name, IAuximRuntime runtime)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -140,28 +79,12 @@ public static partial class CommandHandlers
             return 1;
         }
 
-        var config = ConfigLoader.Load();
-        var mounts = config.Sandbox.Mounts
-            .Where(mount => !mount.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        if (mounts.Count == config.Sandbox.Mounts.Count)
+        if (!runtime.UnmountSandboxVolume(name))
         {
             Console.Error.WriteLine($"Mount not found: {name}");
             return 1;
         }
 
-        ConfigLoader.Save(new AuximConfig
-        {
-            Model = config.Model,
-            Agent = config.Agent,
-            Display = config.Display,
-            Sandbox = new SandboxConfig
-            {
-                Workspace = config.Sandbox.Workspace,
-                Mounts = mounts,
-                Shell = config.Sandbox.Shell,
-            },
-        });
         Console.WriteLine($"Unmounted /volumes/{name}");
         return 0;
     }

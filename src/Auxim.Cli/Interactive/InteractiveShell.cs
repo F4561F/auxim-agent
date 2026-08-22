@@ -1,7 +1,5 @@
 using Auxim.Core.Agent;
-using Auxim.Core.Config;
-using Auxim.Core.State;
-using Auxim.VAFS;
+using Auxim.Core.Runtime;
 using Auxim.Cli.Services;
 using System.Text;
 
@@ -14,15 +12,20 @@ internal static class InteractiveShell
     private static IReadOnlyList<string> _transcriptLines = [];
     private static int _transcriptOffset;
     private static bool _transcriptMode;
+    private static IAuximRuntime _runtime = null!;
 
-    public static async Task<int> RunAsync()
+    public static async Task<int> RunAsync(IAuximRuntime runtime)
     {
+        _runtime = runtime;
         Console.CancelKeyPress += OnCancelKeyPress;
         using var screen = InteractiveScreen.Enter();
         try
         {
-            var history = InteractiveHistory.Load();
-            var editor = new LineEditor(history.Entries, InteractiveCommandCatalog.Complete, ScrollTranscript);
+            var history = InteractiveHistory.Load(runtime);
+            var editor = new LineEditor(
+                history.Entries,
+                InteractiveCommandCatalog.Complete,
+                ScrollTranscript);
             PrintDashboard();
 
             while (true)
@@ -74,16 +77,23 @@ internal static class InteractiveShell
                 {
                     PrintTurnHeader("assistant", $"thinking  {started:HH:mm:ss}");
                     var runner = new ChatRunner(
-                        toolEvent =>
+                        _runtime,
+                        new DelegateRuntimeEventSink((runtimeEvent, _) =>
                         {
-                            toolEvents++;
-                            PrintToolEvent(toolEvent);
-                        },
-                        delta =>
-                        {
-                            streamedContent = true;
-                            streamedResponse.Append(delta);
-                        });
+                            switch (runtimeEvent)
+                            {
+                                case RuntimeToolStartedEvent or RuntimeToolCompletedEvent:
+                                    toolEvents++;
+                                    PrintToolEvent(runtimeEvent);
+                                    break;
+                                case RuntimeContentDeltaEvent contentDelta:
+                                    streamedContent = true;
+                                    streamedResponse.Append(contentDelta.Delta);
+                                    break;
+                            }
+
+                            return ValueTask.CompletedTask;
+                        }));
                     var result = await runner.RunAsync(input, turn.Token);
                     AppendAssistantResponse(streamedContent ? streamedResponse.ToString() : result.FinalResponse);
                     PrintTurnFooter(started, toolEvents);
@@ -131,12 +141,11 @@ internal static class InteractiveShell
 
     private static void PrintHeader()
     {
-        var config = ConfigLoader.Load();
-        var currentSession = new SessionStore().GetCurrentSessionId();
+        var status = _runtime.GetStatus();
         ConsoleTheme.Banner("Auxim", "portable C# AI agent");
         ConsoleTheme.StatusBar(
-            ("model", $"{config.Model.Provider}/{config.Model.Name}"),
-            ("session", string.IsNullOrWhiteSpace(currentSession) ? "(new)" : currentSession),
+            ("model", $"{status.ModelProvider}/{status.ModelName}"),
+            ("session", string.IsNullOrWhiteSpace(status.CurrentSessionId) ? "(new)" : status.CurrentSessionId),
             ("mode", InteractiveScreen.IsAlternateScreenActive ? "alternate" : "inline"));
         Console.WriteLine();
     }
@@ -163,14 +172,23 @@ internal static class InteractiveShell
         Console.WriteLine();
     }
 
-    private static void PrintToolEvent(ToolEvent toolEvent)
+    private static void PrintToolEvent(RuntimeEvent runtimeEvent)
     {
-        var detail = toolEvent.Detail.Length <= 160
-            ? toolEvent.Detail
-            : toolEvent.Detail[..160] + "...";
+        var (name, kind, detail) = runtimeEvent switch
+        {
+            RuntimeToolStartedEvent started => (
+                started.ToolName,
+                "start",
+                $"{started.ResourceAccesses.Count} resource access declarations"),
+            RuntimeToolCompletedEvent completed => (
+                completed.ToolName,
+                completed.Outcome,
+                $"{completed.OutputLength} chars"),
+            _ => ("runtime", runtimeEvent.Kind, ""),
+        };
         Console.WriteLine();
-        var kind = toolEvent.Kind == "done" ? Ansi.Success(toolEvent.Kind) : Ansi.Accent(toolEvent.Kind);
-        Console.WriteLine($"{ConsoleTheme.Badge($"tool:{toolEvent.Name}")} {kind} {Ansi.Muted(detail)}");
+        var renderedKind = kind == "succeeded" ? Ansi.Success(kind) : Ansi.Accent(kind);
+        Console.WriteLine($"{ConsoleTheme.Badge($"tool:{name}")} {renderedKind} {Ansi.Muted(detail)}");
     }
 
     private const int ExitRequested = 42;
@@ -196,7 +214,7 @@ internal static class InteractiveShell
                 PrintHelp();
                 return 0;
             case "new":
-                return CommandHandlers.HandleSession(["new", ..args]);
+                return CommandHandlers.HandleSession(["new", ..args], _runtime);
             case "context":
             case "usage":
                 PrintContext();
@@ -227,32 +245,31 @@ internal static class InteractiveShell
                 PrintStatus("/paste is only available from the main prompt.");
                 return 0;
             case "model":
-                return CommandHandlers.HandleModel(args);
+                return CommandHandlers.HandleModel(args, _runtime);
             case "auth":
-                return CommandHandlers.HandleAuth(args);
+                return CommandHandlers.HandleAuth(args, _runtime);
             case "config":
-                return CommandHandlers.HandleConfig(args);
+                return CommandHandlers.HandleConfig(args, _runtime);
             case "session":
-                return CommandHandlers.HandleSession(args);
+                return CommandHandlers.HandleSession(args, _runtime);
             case "sessions":
-                return CommandHandlers.HandleSession(["list"]);
+                return CommandHandlers.HandleSession(["list"], _runtime);
             case "tools":
-                return await CommandHandlers.HandleTool(["list"]);
+                return await CommandHandlers.HandleTool(["list"], _runtime);
             case "tool":
-                return await CommandHandlers.HandleTool(args);
+                return await CommandHandlers.HandleTool(args, _runtime);
             case "approval":
-                return CommandHandlers.HandleApproval(args);
+                return CommandHandlers.HandleApproval(args, _runtime);
             case "sandbox":
-                return CommandHandlers.HandleSandbox(args);
+                return CommandHandlers.HandleSandbox(args, _runtime);
             case "doctor":
-                return CommandHandlers.HandleDoctor();
+                return CommandHandlers.HandleDoctor(_runtime);
             case "clear":
             case "redraw":
-                InteractiveScreen.Clear();
-                PrintDashboard();
+                ResumeDashboard();
                 return 0;
             case "welcome":
-                PrintDashboard();
+                ResumeDashboard();
                 return 0;
             default:
                 Console.WriteLine(Ansi.Warning($"Unknown command: /{command}"));
@@ -267,16 +284,15 @@ internal static class InteractiveShell
         ConsoleTheme.CommandGrid(InteractiveCommandCatalog.Commands);
 
         ConsoleTheme.Section("Input");
-        ConsoleTheme.Hint("Up/Down history", "Left/Right cursor", "Tab completion", "Ctrl+D exit");
-        ConsoleTheme.Hint("mouse wheel scrolls history in place", "line \\ continues input", "/paste ends with .", "// runs real shell");
+        ConsoleTheme.Hint("mouse wheel or Up/Down scrolls conversation", "Ctrl+P/Ctrl+N input history", "drag to select text", "Ctrl+D exit");
+        ConsoleTheme.Hint("Left/Right cursor", "Tab completion", "line \\ continues input", "/paste ends with .");
         ConsoleTheme.Hint("/history opens history", "/show <n> opens one turn", "/jump <n> replays from a turn", "Esc or /resume returns");
         Console.WriteLine();
     }
 
     private static void PrintContext()
     {
-        var store = new SessionStore();
-        var session = store.GetOrCreateCurrent();
+        var session = _runtime.GetOrCreateCurrentSession();
         var userMessages = session.Messages.Count(message => message.Role == "user");
         var assistantMessages = session.Messages.Count(message => message.Role == "assistant");
         ConsoleTheme.Section("Context");
@@ -401,7 +417,7 @@ internal static class InteractiveShell
 
     private static IReadOnlyList<SessionTurn> GetCurrentTurns()
     {
-        var session = new SessionStore().GetOrCreateCurrent();
+        var session = _runtime.GetOrCreateCurrentSession();
         var turns = new List<SessionTurn>();
         AgentMessage? pendingUser = null;
         foreach (var message in session.Messages)
@@ -457,6 +473,7 @@ internal static class InteractiveShell
         _transcriptLines = BuildTranscriptFrame(title, lines);
         _transcriptOffset = startAtBottom ? Math.Max(0, _transcriptLines.Count - TranscriptPageHeight()) : 0;
         _transcriptMode = true;
+        InteractiveScreen.SetHistoryScrollActive(active: true);
         RenderTranscriptViewport(redrawPrompt);
     }
 
@@ -477,6 +494,7 @@ internal static class InteractiveShell
         _transcriptMode = false;
         _transcriptLines = [];
         _transcriptOffset = 0;
+        InteractiveScreen.SetHistoryScrollActive(active: false);
         InteractiveScreen.Clear();
         PrintDashboard();
     }
@@ -494,7 +512,8 @@ internal static class InteractiveShell
         Console.WriteLine(ConsoleTheme.RuleText());
         ConsoleTheme.Hint(
             $"lines {_transcriptOffset + 1}-{Math.Min(_transcriptLines.Count, _transcriptOffset + height)} / {_transcriptLines.Count}",
-            "mouse wheel scrolls history in place",
+            "mouse wheel, Up/Down, or PageUp/PageDown scrolls history",
+            "drag to select text",
             "Esc or /resume returns");
         Console.WriteLine();
 
@@ -558,14 +577,14 @@ internal static class InteractiveShell
 
     private static void PrintRuntimePanel()
     {
-        var config = ConfigLoader.Load();
-        var session = new SessionStore().GetOrCreateCurrent();
+        var status = _runtime.GetStatus();
+        var session = _runtime.GetOrCreateCurrentSession();
         var screenMode = InteractiveScreen.IsAlternateScreenActive ? "alternate" : "inline";
         ConsoleTheme.Panel("Runtime", [
-            ("model", $"{config.Model.Provider}/{config.Model.Name}"),
+            ("model", $"{status.ModelProvider}/{status.ModelName}"),
             ("session", $"{session.Id} ({session.Messages.Count} messages)"),
-            ("workspace", config.Sandbox.Workspace ?? Environment.CurrentDirectory),
-            ("mounts", config.Sandbox.Mounts.Count.ToString()),
+            ("workspace", status.Workspace),
+            ("mounts", status.MountCount.ToString()),
             ("agent shell", "VAShell policy"),
             ("ui", screenMode),
             ("uptime", FormatDuration(DateTimeOffset.Now - StartedAt)),
@@ -575,8 +594,12 @@ internal static class InteractiveShell
     private static void PrintShortcuts()
     {
         ConsoleTheme.Section("Shortcuts");
-        ConsoleTheme.Pair("Mouse wheel", "scroll history without leaving the prompt");
-        ConsoleTheme.Pair("Up/Down", "browse input history");
+        ConsoleTheme.Pair("Mouse wheel", "open and scroll conversation history");
+        ConsoleTheme.Pair("Mouse drag", "select text for copying in your terminal");
+        ConsoleTheme.Pair("PageUp/PageDown", "scroll history without leaving the prompt");
+        ConsoleTheme.Pair("Up/Down", "open and scroll conversation history");
+        ConsoleTheme.Pair("Ctrl+P/Ctrl+N", "browse input history");
+        ConsoleTheme.Pair("Alt+Up/Down", "browse input history");
         ConsoleTheme.Pair("Left/Right", "move cursor");
         ConsoleTheme.Pair("Home/End", "jump to line boundary");
         ConsoleTheme.Pair("Tab", "complete slash commands");
@@ -592,7 +615,23 @@ internal static class InteractiveShell
 
     private static string? ReadUserInput(LineEditor editor)
     {
-        var input = editor.ReadLine(Prompt(), PromptVisible(), escapeReturnsImmediately: () => _transcriptMode);
+        InteractiveScreen.SetHistoryScrollActive(active: true);
+        string? input;
+        try
+        {
+            input = editor.ReadLine(
+                Prompt(),
+                PromptVisible(),
+                escapeReturnsImmediately: () => _transcriptMode,
+                scrollNavigation: true);
+        }
+        finally
+        {
+            // Do not leave wheel-generated cursor keys queued while a model,
+            // tool, approval prompt, or child process owns the foreground.
+            InteractiveScreen.SetHistoryScrollActive(active: false);
+        }
+
         if (input is null)
         {
             return null;
@@ -685,7 +724,11 @@ internal static class InteractiveShell
             Console.WriteLine();
             Console.WriteLine($"{ConsoleTheme.Badge("shell")} {Ansi.Muted(command)} {Ansi.Muted(started.ToString("HH:mm:ss"))}");
             ConsoleTheme.Rule();
-            await ShellEscapeRunner.RunAsync(command, turn.Token);
+            var exitCode = await _runtime.RunHostCommandAsync(command, turn.Token);
+            if (exitCode != 0)
+            {
+                Console.WriteLine($"{ConsoleTheme.Badge("shell")} {Ansi.Warning($"exit code {exitCode}")}");
+            }
             ConsoleTheme.Rule();
             ConsoleTheme.Hint($"done in {FormatDuration(DateTimeOffset.Now - started)}");
             Console.WriteLine();
@@ -704,6 +747,7 @@ internal static class InteractiveShell
         finally
         {
             _currentTurn = null;
+            TerminalMouse.Reset();
         }
     }
 
@@ -721,7 +765,7 @@ internal static class InteractiveShell
 
     private static IReadOnlyList<string> SplitCommand(string input)
     {
-        return CommandTokenizer.Tokenize(input);
+        return InteractiveCommandParser.Tokenize(input);
     }
 }
 

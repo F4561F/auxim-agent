@@ -8,6 +8,5 @@
   <ItemGroup>
     <ProjectReference Include="..\Auxim.Core\Auxim.Core.csproj" />
     <ProjectReference Include="..\Auxim.Tools\Auxim.Tools.csproj" />
-    <ProjectReference Include="..\Auxim.VAFS\Auxim.VAFS.csproj" />
   </ItemGroup>
 </Project>
