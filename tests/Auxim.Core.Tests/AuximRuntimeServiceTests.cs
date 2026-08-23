@@ -42,11 +42,17 @@ public sealed class AuximRuntimeServiceTests : IDisposable
         var runner = new FakeAgentRunner();
         var approvalHandler = new RecordingApprovalHandler(remember: false);
         var events = new List<RuntimeEvent>();
+        var config = new AuximConfig
+        {
+            Model = new ModelConfig { Provider = "fake-provider", Name = "fake-model" },
+            Agent = new AgentConfig { MaxIterations = 7 },
+        };
+        using var cancellation = new CancellationTokenSource();
         var runtime = new AuximRuntimeService(
             runner,
             CreateToolRegistry,
             () => new SessionStore(_home),
-            () => new AuximConfig(),
+            () => config,
             () => _home);
 
         var result = await runtime.ChatAsync(
@@ -59,14 +65,20 @@ public sealed class AuximRuntimeServiceTests : IDisposable
                     events.Add(runtimeEvent);
                     return ValueTask.CompletedTask;
                 }),
-            });
+            },
+            cancellation.Token);
 
         Assert.Equal("fake response", result.FinalResponse);
-        Assert.Equal("run through fake", runner.Message);
-        Assert.NotNull(runner.Options);
-        Assert.Equal(result.RunId, runner.Options.RunId);
-        Assert.Equal(_home, runner.Options.HomeDirectory);
-        Assert.Same(approvalHandler, runner.Options.ApprovalHandler);
+        Assert.NotNull(runner.Request);
+        Assert.Equal("run through fake", runner.Request.UserInput);
+        Assert.Equal(result.RunId, runner.Request.RunId);
+        Assert.Equal(result.SessionId, runner.Request.SessionId);
+        Assert.Equal(_home, runner.Request.HomeDirectory);
+        Assert.Same(config, runner.Request.Configuration);
+        Assert.Empty(runner.Request.SessionContext);
+        Assert.Same(approvalHandler, runner.Request.ApprovalHandler);
+        Assert.NotNull(runner.Request.EventSink);
+        Assert.Equal(cancellation.Token, runner.CancellationToken);
         Assert.Contains(events, runtimeEvent =>
             runtimeEvent is RuntimeRunStartedEvent started && started.RunId == result.RunId);
         Assert.Contains(events, runtimeEvent =>
@@ -336,22 +348,19 @@ public sealed class AuximRuntimeServiceTests : IDisposable
 
     private sealed class FakeAgentRunner : IAgentRunner
     {
-        public string? Message { get; private set; }
-        public AgentOptions? Options { get; private set; }
+        public AgentRunRequest? Request { get; private set; }
+        public CancellationToken CancellationToken { get; private set; }
 
         public Task<AgentResult> RunAsync(
-            AuximConfig config,
-            AgentOptions options,
-            string message,
-            IReadOnlyList<AgentMessage>? history = null,
+            AgentRunRequest request,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Message = message;
-            Options = options;
+            Request = request;
+            CancellationToken = cancellationToken;
             return Task.FromResult(new AgentResult(
                 "fake response",
-                [.. history ?? [], new AgentMessage("user", message), new AgentMessage("assistant", "fake response")]));
+                [.. request.SessionContext, new AgentMessage("user", request.UserInput), new AgentMessage("assistant", "fake response")]));
         }
     }
 

@@ -178,19 +178,17 @@ public sealed partial class AuximRuntimeService : IAuximRuntime
         var config = _configLoader();
         var runId = AuximRunId.New();
         var eventSink = CreateEventSink(options?.EventSink);
-        var agentOptions = new AgentOptions
-        {
-            Provider = config.Model.Provider,
-            Model = config.Model.Name,
-            MaxIterations = config.Agent.MaxIterations,
-            RunId = runId,
-            HomeDirectory = _homeDirectory(),
-            ApprovalHandler = options?.ApprovalHandler ?? NonInteractiveApprovalHandler.Instance,
-            EventSink = eventSink,
-        };
-
         var sessions = _sessionStoreFactory();
         var session = ResolveSession(sessions, request);
+        var runRequest = new AgentRunRequest(
+            runId,
+            session.Id,
+            request.Prompt,
+            session.Messages.ToArray(),
+            config,
+            _homeDirectory(),
+            options?.ApprovalHandler ?? NonInteractiveApprovalHandler.Instance,
+            eventSink);
 
         await eventSink.PublishAsync(
             new RuntimeRunStartedEvent(
@@ -201,12 +199,7 @@ public sealed partial class AuximRuntimeService : IAuximRuntime
             cancellationToken);
         try
         {
-            var result = await _agentRunner.RunAsync(
-                config,
-                agentOptions,
-                request.Prompt,
-                session.Messages,
-                cancellationToken);
+            var result = await _agentRunner.RunAsync(runRequest, cancellationToken);
             if (request.AppendToSession)
             {
                 sessions.AppendTurn(session, request.Prompt, result.FinalResponse);

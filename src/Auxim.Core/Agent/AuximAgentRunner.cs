@@ -1,4 +1,5 @@
 using Auxim.Core.Config;
+using Auxim.Core.Runtime;
 using Auxim.Core.Tools;
 
 namespace Auxim.Core.Agent;
@@ -17,16 +18,26 @@ public sealed class AuximAgentRunner : IAgentRunner
     }
 
     public Task<AgentResult> RunAsync(
-        AuximConfig config,
-        AgentOptions options,
-        string message,
-        IReadOnlyList<AgentMessage>? history = null,
+        AgentRunRequest request,
         CancellationToken cancellationToken = default)
     {
+        var options = new AgentOptions
+        {
+            Provider = request.Configuration.Model.Provider,
+            Model = request.Configuration.Model.Name,
+            MaxIterations = request.Configuration.Agent.MaxIterations,
+            RunId = request.RunId,
+            HomeDirectory = request.HomeDirectory,
+            ApprovalHandler = request.ApprovalHandler,
+            EventSink = request.EventSink,
+        };
         var agent = new AuximAgent(
-            _agentClientFactory(config),
+            _agentClientFactory(request.Configuration),
             _toolRegistryFactory(),
             options);
-        return agent.RunConversationAsync(message, history, cancellationToken);
+        return agent.RunConversationAsync(
+            request.UserInput,
+            request.SessionContext,
+            cancellationToken);
     }
 }

@@ -1,13 +1,10 @@
-using Auxim.Core.Config;
+using Auxim.Core.Runtime;
 
 namespace Auxim.Core.Agent;
 
 public interface IAgentRunner
 {
     Task<AgentResult> RunAsync(
-        AuximConfig config,
-        AgentOptions options,
-        string message,
-        IReadOnlyList<AgentMessage>? history = null,
+        AgentRunRequest request,
         CancellationToken cancellationToken = default);
 }
