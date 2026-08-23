@@ -4,7 +4,6 @@ using Auxim.Core.Config;
 using Auxim.Core.Resources;
 using Auxim.Core.Runtime;
 using Auxim.Core.State;
-using Auxim.Core.Tools;
 using Xunit;
 
 namespace Auxim.Core.Tests;
@@ -20,7 +19,7 @@ public sealed class AuximRuntimeServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ChatAsyncRunsAgentAndAppendsSession()
+    public async Task ChatAsyncRunsInjectedRunnerAndAppendsSession()
     {
         var runtime = CreateRuntime();
 
@@ -39,7 +38,7 @@ public sealed class AuximRuntimeServiceTests : IDisposable
     [Fact]
     public async Task ChatAsyncUsesInjectedAgentRunner()
     {
-        var runner = new FakeAgentRunner();
+        var runner = new FakeAgentRunner("fake response");
         var approvalHandler = new RecordingApprovalHandler(remember: false);
         var events = new List<RuntimeEvent>();
         var config = new AuximConfig
@@ -50,10 +49,9 @@ public sealed class AuximRuntimeServiceTests : IDisposable
         using var cancellation = new CancellationTokenSource();
         var runtime = new AuximRuntimeService(
             runner,
-            CreateToolRegistry,
-            () => new SessionStore(_home),
-            () => config,
-            () => _home);
+            sessionStoreFactory: () => new SessionStore(_home),
+            configLoader: () => config,
+            homeDirectory: () => _home);
 
         var result = await runtime.ChatAsync(
             new AuximChatRequest("run through fake"),
@@ -69,6 +67,7 @@ public sealed class AuximRuntimeServiceTests : IDisposable
             cancellation.Token);
 
         Assert.Equal("fake response", result.FinalResponse);
+        Assert.Empty(runtime.ListTools());
         Assert.NotNull(runner.Request);
         Assert.Equal("run through fake", runner.Request.UserInput);
         Assert.Equal(result.RunId, runner.Request.RunId);
@@ -92,21 +91,23 @@ public sealed class AuximRuntimeServiceTests : IDisposable
     [Fact]
     public async Task RuntimeOwnsStatusAndToolOperations()
     {
-        var runtime = CreateRuntime(new AuximConfig
-        {
-            Model = new ModelConfig
+        var runtime = CreateRuntime(
+            new AuximConfig
             {
-                Provider = "test-provider",
-                Name = "test-model",
-                BaseUrl = "https://example.test/v1",
+                Model = new ModelConfig
+                {
+                    Provider = "test-provider",
+                    Name = "test-model",
+                    BaseUrl = "https://example.test/v1",
+                },
+                Agent = new AgentConfig { MaxIterations = 12 },
+                Sandbox = new SandboxConfig
+                {
+                    Workspace = "/workspace",
+                    Mounts = [new SandboxMountConfig { Name = "data", HostPath = "/data" }],
+                },
             },
-            Agent = new AgentConfig { MaxIterations = 12 },
-            Sandbox = new SandboxConfig
-            {
-                Workspace = "/workspace",
-                Mounts = [new SandboxMountConfig { Name = "data", HostPath = "/data" }],
-            },
-        });
+            new FakeRuntimeToolService());
 
         var status = runtime.GetStatus();
         var tool = Assert.Single(runtime.ListTools());
@@ -194,69 +195,12 @@ public sealed class AuximRuntimeServiceTests : IDisposable
         Assert.Contains("hello external", first.FinalResponse);
     }
 
-    [Fact]
-    public async Task ToolApprovalUsesUniqueRequestsResourcesAndOneEventStream()
-    {
-        var runtime = CreateProtectedRuntime();
-        var handler = new RecordingApprovalHandler(remember: true);
-        var events = new List<RuntimeEvent>();
-        var options = new AuximRuntimeOptions
-        {
-            ApprovalHandler = handler,
-            EventSink = new DelegateRuntimeEventSink((runtimeEvent, _) =>
-            {
-                events.Add(runtimeEvent);
-                return ValueTask.CompletedTask;
-            }),
-        };
-
-        await runtime.InvokeToolAsync(
-            "protected.write",
-            new Dictionary<string, object?> { ["path"] = "/workspace/one.txt" },
-            options);
-        await runtime.InvokeToolAsync(
-            "protected.write",
-            new Dictionary<string, object?> { ["path"] = "/workspace/one.txt" },
-            options);
-        await runtime.InvokeToolAsync(
-            "protected.write",
-            new Dictionary<string, object?> { ["path"] = "/workspace/two.txt" },
-            options);
-
-        Assert.Equal(2, handler.Requests.Count);
-        Assert.NotEqual(handler.Requests[0].RequestId, handler.Requests[1].RequestId);
-        Assert.Equal("vafs:/workspace/one.txt", handler.Requests[0].ResourceAccesses.Single().Resource.Value);
-        Assert.Equal("vafs:/workspace/two.txt", handler.Requests[1].ResourceAccesses.Single().Resource.Value);
-        Assert.Contains(events, runtimeEvent => runtimeEvent is RuntimeToolStartedEvent);
-        Assert.Contains(events, runtimeEvent => runtimeEvent is RuntimeApprovalRequestedEvent);
-        Assert.Contains(events, runtimeEvent => runtimeEvent is RuntimeApprovalResolvedEvent);
-        Assert.Contains(events, runtimeEvent => runtimeEvent is RuntimeToolCompletedEvent { Outcome: "succeeded" });
-        Assert.Equal(2, runtime.ListApprovalGrants().Count);
-    }
-
-    [Fact]
-    public async Task ApprovalHandlerReceivesCancellation()
-    {
-        var runtime = CreateProtectedRuntime();
-        var handler = new BlockingApprovalHandler();
-        using var cancellation = new CancellationTokenSource();
-        var invocation = runtime.InvokeToolAsync(
-            "protected.write",
-            new Dictionary<string, object?> { ["path"] = "/workspace/cancelled.txt" },
-            new AuximRuntimeOptions { ApprovalHandler = handler },
-            cancellation.Token);
-
-        await handler.Entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        cancellation.Cancel();
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => invocation);
-        Assert.True(handler.ObservedToken.CanBeCanceled);
-    }
-
-    private AuximRuntimeService CreateRuntime(AuximConfig? config = null) =>
+    private AuximRuntimeService CreateRuntime(
+        AuximConfig? config = null,
+        IRuntimeToolService? tools = null) =>
         new(
-            CreateAgentRunner(),
-            CreateToolRegistry,
+            new FakeAgentRunner(),
+            tools,
             () => new SessionStore(_home),
             () => config ?? new AuximConfig(),
             () => _home);
@@ -265,53 +209,10 @@ public sealed class AuximRuntimeServiceTests : IDisposable
     {
         var path = Path.Combine(_home, "config.json");
         return new AuximRuntimeService(
-            CreateAgentRunner(),
-            CreateToolRegistry,
-            () => new SessionStore(_home),
-            () => ConfigLoader.Load(path),
-            () => _home);
-    }
-
-    private AuximRuntimeService CreateProtectedRuntime() =>
-        new(
-            CreateAgentRunner(CreateProtectedToolRegistry),
-            CreateProtectedToolRegistry,
-            () => new SessionStore(_home),
-            () => new AuximConfig(),
-            () => _home);
-
-    private static IAgentRunner CreateAgentRunner(Func<ToolRegistry>? toolRegistryFactory = null) =>
-        new AuximAgentRunner(
-            _ => new EchoAgentClient(),
-            toolRegistryFactory ?? CreateToolRegistry);
-
-    private static ToolRegistry CreateToolRegistry()
-    {
-        var registry = new ToolRegistry();
-        registry.Register(new ToolDefinition(
-            "echo",
-            "test",
-            "Returns text.",
-            (arguments, _) => Task.FromResult(arguments["text"]?.ToString() ?? "")));
-        return registry;
-    }
-
-    private static ToolRegistry CreateProtectedToolRegistry()
-    {
-        var registry = new ToolRegistry();
-        registry.Register(new ToolDefinition(
-            "protected.write",
-            "test",
-            "Writes a protected resource.",
-            (_, _) => Task.FromResult("written"))
-        {
-            ResourceAccessResolver = arguments =>
-                [new ResourceAccess(
-                    ResourceAction.Write,
-                    ResourceUri.Vafs(arguments["path"]?.ToString() ?? ""),
-                    RequiresApproval: true)],
-        });
-        return registry;
+            new FakeAgentRunner(),
+            sessionStoreFactory: () => new SessionStore(_home),
+            configLoader: () => ConfigLoader.Load(path),
+            homeDirectory: () => _home);
     }
 
     private sealed class RecordingApprovalHandler(bool remember) : IApprovalHandler
@@ -328,25 +229,56 @@ public sealed class AuximRuntimeServiceTests : IDisposable
         }
     }
 
-    private sealed class BlockingApprovalHandler : IApprovalHandler
+    private sealed class FakeRuntimeToolService : IRuntimeToolService
     {
-        public TaskCompletionSource Entered { get; } = new(
-            TaskCreationOptions.RunContinuationsAsynchronously);
+        public IReadOnlyList<AuximRuntimeTool> ListTools() =>
+            [new AuximRuntimeTool(
+                "echo",
+                "echo",
+                "test",
+                "Returns text.",
+                new Dictionary<string, object?>(),
+                false)];
 
-        public CancellationToken ObservedToken { get; private set; }
+        public IReadOnlyList<ResourceAccess> ResolveResourceAccesses(
+            string name,
+            IReadOnlyDictionary<string, object?> arguments) => [];
 
-        public async Task<ApprovalResponse> RequestAsync(
-            ApprovalRequest request,
+        public async Task<string> InvokeAsync(
+            AuximRunId runId,
+            string toolCallId,
+            string name,
+            IReadOnlyDictionary<string, object?> arguments,
+            string homeDirectory,
+            IApprovalHandler approvalHandler,
+            IRuntimeEventSink eventSink,
             CancellationToken cancellationToken)
         {
-            ObservedToken = cancellationToken;
-            Entered.TrySetResult();
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-            return ApprovalResponse.Allow();
+            await eventSink.PublishAsync(
+                new RuntimeToolStartedEvent(
+                    Guid.NewGuid().ToString("N"),
+                    DateTimeOffset.UtcNow,
+                    runId,
+                    toolCallId,
+                    name,
+                    []),
+                cancellationToken);
+            var result = arguments["text"]?.ToString() ?? "";
+            await eventSink.PublishAsync(
+                new RuntimeToolCompletedEvent(
+                    Guid.NewGuid().ToString("N"),
+                    DateTimeOffset.UtcNow,
+                    runId,
+                    toolCallId,
+                    name,
+                    "succeeded",
+                    result.Length),
+                cancellationToken);
+            return result;
         }
     }
 
-    private sealed class FakeAgentRunner : IAgentRunner
+    private sealed class FakeAgentRunner(string? response = null) : IAgentRunner
     {
         public AgentRunRequest? Request { get; private set; }
         public CancellationToken CancellationToken { get; private set; }
@@ -358,9 +290,10 @@ public sealed class AuximRuntimeServiceTests : IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             Request = request;
             CancellationToken = cancellationToken;
+            var finalResponse = response ?? $"Auxim received: {request.UserInput}";
             return Task.FromResult(new AgentResult(
-                "fake response",
-                [.. request.SessionContext, new AgentMessage("user", request.UserInput), new AgentMessage("assistant", "fake response")]));
+                finalResponse,
+                [.. request.SessionContext, new AgentMessage("user", request.UserInput), new AgentMessage("assistant", finalResponse)]));
         }
     }
 

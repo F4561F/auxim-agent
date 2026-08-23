@@ -1,7 +1,6 @@
 using Auxim.Core.Agent;
 using Auxim.Core.Config;
 using Auxim.Core.State;
-using Auxim.Core.Tools;
 using Auxim.Core.Approval;
 using Auxim.Core.Resources;
 
@@ -10,7 +9,7 @@ namespace Auxim.Core.Runtime;
 public sealed partial class AuximRuntimeService : IAuximRuntime
 {
     private readonly IAgentRunner _agentRunner;
-    private readonly Func<ToolRegistry> _toolRegistryFactory;
+    private readonly IRuntimeToolService _tools;
     private readonly Func<SessionStore> _sessionStoreFactory;
     private readonly Func<AuximConfig> _configLoader;
     private readonly Func<string> _homeDirectory;
@@ -18,13 +17,13 @@ public sealed partial class AuximRuntimeService : IAuximRuntime
 
     public AuximRuntimeService(
         IAgentRunner agentRunner,
-        Func<ToolRegistry> toolRegistryFactory,
+        IRuntimeToolService? tools = null,
         Func<SessionStore>? sessionStoreFactory = null,
         Func<AuximConfig>? configLoader = null,
         Func<string>? homeDirectory = null)
     {
         _agentRunner = agentRunner;
-        _toolRegistryFactory = toolRegistryFactory;
+        _tools = tools ?? EmptyRuntimeToolService.Instance;
         _sessionStoreFactory = sessionStoreFactory ?? (() => new SessionStore());
         _configLoader = configLoader ?? (() => ConfigLoader.Load());
         _homeDirectory = homeDirectory ?? ConfigLoader.GetAuximHome;
@@ -45,18 +44,7 @@ public sealed partial class AuximRuntimeService : IAuximRuntime
             config.Sandbox.Mounts.Count);
     }
 
-    public IReadOnlyList<AuximRuntimeTool> ListTools() =>
-        _toolRegistryFactory()
-            .List()
-            .OrderBy(tool => tool.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(tool => new AuximRuntimeTool(
-                tool.Name,
-                tool.SchemaName,
-                tool.Toolset,
-                tool.Description,
-                tool.ParametersSchema,
-                tool.ResourceAccessResolver is not null))
-            .ToArray();
+    public IReadOnlyList<AuximRuntimeTool> ListTools() => _tools.ListTools();
 
     public async Task<string> InvokeToolAsync(
         string name,
@@ -67,18 +55,15 @@ public sealed partial class AuximRuntimeService : IAuximRuntime
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(arguments);
         var runId = AuximRunId.New();
-        var execution = await CreateToolExecution(options).ExecuteAsync(
+        return await _tools.InvokeAsync(
             runId,
             $"direct:{Guid.NewGuid():N}",
             name,
             arguments,
+            _homeDirectory(),
+            options?.ApprovalHandler ?? NonInteractiveApprovalHandler.Instance,
+            CreateEventSink(options?.EventSink),
             cancellationToken);
-        if (execution.WasDenied)
-        {
-            throw new ToolApprovalDeniedException(name, execution.Feedback);
-        }
-
-        return execution.Content;
     }
 
     public IReadOnlyList<ResourceAccess> ResolveToolResourceAccesses(
@@ -87,7 +72,7 @@ public sealed partial class AuximRuntimeService : IAuximRuntime
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(arguments);
-        return _toolRegistryFactory().Get(name).ResolveResourceAccesses(arguments);
+        return _tools.ResolveResourceAccesses(name, arguments);
     }
 
     public IReadOnlyList<AuximRuntimeSessionSummary> ListSessions()
@@ -229,13 +214,6 @@ public sealed partial class AuximRuntimeService : IAuximRuntime
             throw;
         }
     }
-
-    private ToolExecutionCoordinator CreateToolExecution(AuximRuntimeOptions? options) =>
-        new(
-            _toolRegistryFactory(),
-            _homeDirectory(),
-            options?.ApprovalHandler ?? NonInteractiveApprovalHandler.Instance,
-            CreateEventSink(options?.EventSink));
 
     private IRuntimeEventSink CreateEventSink(IRuntimeEventSink? frontendSink)
     {
