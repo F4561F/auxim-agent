@@ -37,6 +37,47 @@ public sealed class AuximRuntimeServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ChatAsyncUsesInjectedAgentRunner()
+    {
+        var runner = new FakeAgentRunner();
+        var approvalHandler = new RecordingApprovalHandler(remember: false);
+        var events = new List<RuntimeEvent>();
+        var runtime = new AuximRuntimeService(
+            runner,
+            CreateToolRegistry,
+            () => new SessionStore(_home),
+            () => new AuximConfig(),
+            () => _home);
+
+        var result = await runtime.ChatAsync(
+            new AuximChatRequest("run through fake"),
+            new AuximRuntimeOptions
+            {
+                ApprovalHandler = approvalHandler,
+                EventSink = new DelegateRuntimeEventSink((runtimeEvent, _) =>
+                {
+                    events.Add(runtimeEvent);
+                    return ValueTask.CompletedTask;
+                }),
+            });
+
+        Assert.Equal("fake response", result.FinalResponse);
+        Assert.Equal("run through fake", runner.Message);
+        Assert.NotNull(runner.Options);
+        Assert.Equal(result.RunId, runner.Options.RunId);
+        Assert.Equal(_home, runner.Options.HomeDirectory);
+        Assert.Same(approvalHandler, runner.Options.ApprovalHandler);
+        Assert.Contains(events, runtimeEvent =>
+            runtimeEvent is RuntimeRunStartedEvent started && started.RunId == result.RunId);
+        Assert.Contains(events, runtimeEvent =>
+            runtimeEvent is RuntimeRunCompletedEvent completed && completed.RunId == result.RunId);
+
+        var session = Assert.Single(new SessionStore(_home).List());
+        var document = new SessionStore(_home).TryLoad(session.Id);
+        Assert.Equal("fake response", document!.Messages.Last().Content);
+    }
+
+    [Fact]
     public async Task RuntimeOwnsStatusAndToolOperations()
     {
         var runtime = CreateRuntime(new AuximConfig
@@ -202,7 +243,7 @@ public sealed class AuximRuntimeServiceTests : IDisposable
 
     private AuximRuntimeService CreateRuntime(AuximConfig? config = null) =>
         new(
-            _ => new EchoAgentClient(),
+            CreateAgentRunner(),
             CreateToolRegistry,
             () => new SessionStore(_home),
             () => config ?? new AuximConfig(),
@@ -212,7 +253,7 @@ public sealed class AuximRuntimeServiceTests : IDisposable
     {
         var path = Path.Combine(_home, "config.json");
         return new AuximRuntimeService(
-            _ => new EchoAgentClient(),
+            CreateAgentRunner(),
             CreateToolRegistry,
             () => new SessionStore(_home),
             () => ConfigLoader.Load(path),
@@ -221,11 +262,16 @@ public sealed class AuximRuntimeServiceTests : IDisposable
 
     private AuximRuntimeService CreateProtectedRuntime() =>
         new(
-            _ => new EchoAgentClient(),
+            CreateAgentRunner(CreateProtectedToolRegistry),
             CreateProtectedToolRegistry,
             () => new SessionStore(_home),
             () => new AuximConfig(),
             () => _home);
+
+    private static IAgentRunner CreateAgentRunner(Func<ToolRegistry>? toolRegistryFactory = null) =>
+        new AuximAgentRunner(
+            _ => new EchoAgentClient(),
+            toolRegistryFactory ?? CreateToolRegistry);
 
     private static ToolRegistry CreateToolRegistry()
     {
@@ -285,6 +331,27 @@ public sealed class AuximRuntimeServiceTests : IDisposable
             Entered.TrySetResult();
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             return ApprovalResponse.Allow();
+        }
+    }
+
+    private sealed class FakeAgentRunner : IAgentRunner
+    {
+        public string? Message { get; private set; }
+        public AgentOptions? Options { get; private set; }
+
+        public Task<AgentResult> RunAsync(
+            AuximConfig config,
+            AgentOptions options,
+            string message,
+            IReadOnlyList<AgentMessage>? history = null,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Message = message;
+            Options = options;
+            return Task.FromResult(new AgentResult(
+                "fake response",
+                [.. history ?? [], new AgentMessage("user", message), new AgentMessage("assistant", "fake response")]));
         }
     }
 

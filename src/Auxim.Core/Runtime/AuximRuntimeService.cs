@@ -9,7 +9,7 @@ namespace Auxim.Core.Runtime;
 
 public sealed partial class AuximRuntimeService : IAuximRuntime
 {
-    private readonly Func<AuximConfig, IAgentClient> _agentClientFactory;
+    private readonly IAgentRunner _agentRunner;
     private readonly Func<ToolRegistry> _toolRegistryFactory;
     private readonly Func<SessionStore> _sessionStoreFactory;
     private readonly Func<AuximConfig> _configLoader;
@@ -17,13 +17,13 @@ public sealed partial class AuximRuntimeService : IAuximRuntime
     private readonly object _externalConversationGate = new();
 
     public AuximRuntimeService(
-        Func<AuximConfig, IAgentClient> agentClientFactory,
+        IAgentRunner agentRunner,
         Func<ToolRegistry> toolRegistryFactory,
         Func<SessionStore>? sessionStoreFactory = null,
         Func<AuximConfig>? configLoader = null,
         Func<string>? homeDirectory = null)
     {
-        _agentClientFactory = agentClientFactory;
+        _agentRunner = agentRunner;
         _toolRegistryFactory = toolRegistryFactory;
         _sessionStoreFactory = sessionStoreFactory ?? (() => new SessionStore());
         _configLoader = configLoader ?? (() => ConfigLoader.Load());
@@ -191,10 +191,6 @@ public sealed partial class AuximRuntimeService : IAuximRuntime
 
         var sessions = _sessionStoreFactory();
         var session = ResolveSession(sessions, request);
-        var agent = new AuximAgent(
-            _agentClientFactory(config),
-            _toolRegistryFactory(),
-            agentOptions);
 
         await eventSink.PublishAsync(
             new RuntimeRunStartedEvent(
@@ -205,7 +201,12 @@ public sealed partial class AuximRuntimeService : IAuximRuntime
             cancellationToken);
         try
         {
-            var result = await agent.RunConversationAsync(request.Prompt, session.Messages, cancellationToken);
+            var result = await _agentRunner.RunAsync(
+                config,
+                agentOptions,
+                request.Prompt,
+                session.Messages,
+                cancellationToken);
             if (request.AppendToSession)
             {
                 sessions.AppendTurn(session, request.Prompt, result.FinalResponse);
