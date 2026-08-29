@@ -1,4 +1,3 @@
-using Auxim.Core.Agent;
 using Auxim.Core.Runtime;
 using Auxim.Cli.Interactive;
 
@@ -17,7 +16,7 @@ public sealed class ChatRunner
         _eventSink = eventSink;
     }
 
-    public async Task<AgentResult> RunAsync(string prompt, CancellationToken cancellationToken = default)
+    public async Task<AuximChatResult> RunAsync(string prompt, CancellationToken cancellationToken = default)
     {
         var result = await _runtime.ChatAsync(
             new AuximChatRequest(prompt),
@@ -27,6 +26,6 @@ public sealed class ChatRunner
             ApprovalHandler = new CliApprovalHandler(),
         },
             cancellationToken);
-        return result.ToAgentResult();
+        return result;
     }
 }

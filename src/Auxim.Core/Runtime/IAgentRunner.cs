@@ -1,6 +1,4 @@
-using Auxim.Core.Runtime;
-
-namespace Auxim.Core.Agent;
+namespace Auxim.Core.Runtime;
 
 public interface IAgentRunner
 {

@@ -1,7 +1,7 @@
 using Auxim.Core.Agent;
 using Auxim.Core.Config;
 
-namespace Auxim.Core.Runtime;
+namespace Auxim.Tools;
 
 public static class DefaultAgentClientFactory
 {

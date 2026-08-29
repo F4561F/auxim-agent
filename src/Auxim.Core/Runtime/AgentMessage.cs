@@ -1,4 +1,4 @@
-namespace Auxim.Core.Agent;
+namespace Auxim.Core.Runtime;
 
 public sealed record AgentMessage(string Role, string Content)
 {

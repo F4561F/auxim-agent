@@ -1,3 +1,5 @@
+using Auxim.Core.Runtime;
+
 namespace Auxim.Core.Agent;
 
 public sealed class EchoAgentClient : IAgentClient

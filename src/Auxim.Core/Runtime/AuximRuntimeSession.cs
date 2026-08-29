@@ -1,5 +1,3 @@
-using Auxim.Core.Agent;
-
 namespace Auxim.Core.Runtime;
 
 public sealed record AuximRuntimeSessionSummary(
