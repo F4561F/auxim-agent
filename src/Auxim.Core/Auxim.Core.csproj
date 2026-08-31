@@ -1,4 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Auxim.Core</PackageId>
+    <Authors>F4561F</Authors>
+    <Description>Trusted runtime contracts and application boundary for Auxim agents.</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/F4561F/auxim-agent</RepositoryUrl>
+    <PackageTags>auxim;agent;runtime;kernel;security</PackageTags>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Auxim.VAFS\Auxim.VAFS.csproj" />
   </ItemGroup>

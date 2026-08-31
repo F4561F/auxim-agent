@@ -1,1 +1,13 @@
-<Project Sdk="Microsoft.NET.Sdk" />
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Auxim.VAFS</PackageId>
+    <Authors>F4561F</Authors>
+    <Description>Virtual agent filesystem and shell primitives for the Auxim trusted runtime.</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/F4561F/auxim-agent</RepositoryUrl>
+    <PackageTags>auxim;agent;runtime;vafs;filesystem</PackageTags>
+  </PropertyGroup>
+</Project>
