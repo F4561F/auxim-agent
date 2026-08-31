@@ -8,13 +8,16 @@ public sealed class AuximAgentRunner : IAgentRunner
 {
     private readonly Func<AuximConfig, IAgentClient> _agentClientFactory;
     private readonly Func<ToolRegistry> _toolRegistryFactory;
+    private readonly IRuntimeToolService _runtimeTools;
 
     public AuximAgentRunner(
         Func<AuximConfig, IAgentClient> agentClientFactory,
-        Func<ToolRegistry> toolRegistryFactory)
+        Func<ToolRegistry> toolRegistryFactory,
+        IRuntimeToolService runtimeTools)
     {
         _agentClientFactory = agentClientFactory;
         _toolRegistryFactory = toolRegistryFactory;
+        _runtimeTools = runtimeTools;
     }
 
     public Task<AgentResult> RunAsync(
@@ -34,6 +37,7 @@ public sealed class AuximAgentRunner : IAgentRunner
         var agent = new AuximAgent(
             _agentClientFactory(request.Configuration),
             _toolRegistryFactory(),
+            _runtimeTools,
             options);
         return agent.RunConversationAsync(
             request.UserInput,

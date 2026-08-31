@@ -63,6 +63,36 @@ public sealed class RuntimeToolServiceTests : IDisposable
         Assert.True(handler.ObservedToken.CanBeCanceled);
     }
 
+    [Fact]
+    public async Task DeniedApprovalThrowsBoundaryExceptionAndPublishesDeniedEvents()
+    {
+        var tools = new RuntimeToolService(CreateProtectedToolRegistry);
+        var handler = new DenyingApprovalHandler("not approved");
+        var events = new List<RuntimeEvent>();
+        var eventSink = new DelegateRuntimeEventSink((runtimeEvent, _) =>
+        {
+            events.Add(runtimeEvent);
+            return ValueTask.CompletedTask;
+        });
+
+        var exception = await Assert.ThrowsAsync<ToolApprovalDeniedException>(() =>
+            InvokeAsync(tools, "/workspace/denied.txt", handler, eventSink));
+
+        Assert.Equal("protected.write", exception.ToolName);
+        Assert.Equal("not approved", exception.Reason);
+        Assert.Equal(
+            ["tool.started", "approval.requested", "approval.resolved", "tool.completed"],
+            events.Select(runtimeEvent => runtimeEvent.Kind));
+        Assert.Contains(events, runtimeEvent =>
+            runtimeEvent is RuntimeApprovalResolvedEvent
+            {
+                Approved: false,
+                Reason: "not approved",
+            });
+        Assert.Contains(events, runtimeEvent =>
+            runtimeEvent is RuntimeToolCompletedEvent { Outcome: "denied", OutputLength: 0 });
+    }
+
     private Task<string> InvokeAsync(
         IRuntimeToolService tools,
         string path,
@@ -126,6 +156,17 @@ public sealed class RuntimeToolServiceTests : IDisposable
             Entered.TrySetResult();
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             return ApprovalResponse.Allow();
+        }
+    }
+
+    private sealed class DenyingApprovalHandler(string reason) : IApprovalHandler
+    {
+        public Task<ApprovalResponse> RequestAsync(
+            ApprovalRequest request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(ApprovalResponse.Deny(reason));
         }
     }
 

@@ -23,6 +23,20 @@ public interface IRuntimeToolService
         CancellationToken cancellationToken);
 }
 
+public sealed class ToolApprovalDeniedException : InvalidOperationException
+{
+    public ToolApprovalDeniedException(string toolName, string reason)
+        : base($"Tool '{toolName}' was denied: {reason}")
+    {
+        ToolName = toolName;
+        Reason = reason;
+    }
+
+    public string ToolName { get; }
+
+    public string Reason { get; }
+}
+
 public sealed class RuntimeToolService : IRuntimeToolService
 {
     private readonly Func<ToolRegistry> _toolRegistryFactory;

@@ -12,21 +12,23 @@ public sealed class AuximAgent
     private readonly ToolRegistry _tools;
     private readonly AgentOptions _options;
     private readonly IRuntimeEventSink _eventSink;
-    private readonly ToolExecutionCoordinator _toolExecution;
+    private readonly IRuntimeToolService _runtimeTools;
+    private readonly string _homeDirectory;
 
-    public AuximAgent(IAgentClient client, ToolRegistry tools, AgentOptions? options = null)
+    public AuximAgent(
+        IAgentClient client,
+        ToolRegistry tools,
+        IRuntimeToolService runtimeTools,
+        AgentOptions? options = null)
     {
         _client = client;
         _tools = tools;
+        _runtimeTools = runtimeTools;
         _options = options ?? new AgentOptions();
         _eventSink = _options.EventSink ?? NullAgentRuntimeEventSink.Instance;
-        _toolExecution = new ToolExecutionCoordinator(
-            tools,
-            string.IsNullOrWhiteSpace(_options.HomeDirectory)
-                ? ConfigLoader.GetAuximHome()
-                : _options.HomeDirectory,
-            _options.ApprovalHandler,
-            _eventSink);
+        _homeDirectory = string.IsNullOrWhiteSpace(_options.HomeDirectory)
+            ? ConfigLoader.GetAuximHome()
+            : _options.HomeDirectory;
     }
 
     public async Task<string> ChatAsync(string message, CancellationToken cancellationToken = default)
@@ -154,25 +156,30 @@ public sealed class AuximAgent
         {
             var args = ParseArguments(call.ArgumentsJson);
             var toolName = ResolveToolName(call.Name);
-            var execution = await _toolExecution.ExecuteAsync(
+            var content = await _runtimeTools.InvokeAsync(
                 _options.RunId,
                 call.Id,
                 toolName,
                 args,
+                _homeDirectory,
+                _options.ApprovalHandler,
+                _eventSink,
                 cancellationToken);
-            if (execution.WasDenied)
+            return ToolInvocationResult.Allowed(toolName, content);
+        }
+        catch (ToolApprovalDeniedException exception)
+        {
+            var content = JsonSerializer.Serialize(new
             {
-                var content = JsonSerializer.Serialize(new
-                {
-                    denied = true,
-                    tool = toolName,
-                    userFeedback = execution.Feedback,
-                    instruction = "Respect the user's decision. Continue without this tool or propose a safer alternative.",
-                });
-                return ToolInvocationResult.DeniedResult(toolName, content, execution.Feedback);
-            }
-
-            return ToolInvocationResult.Allowed(toolName, execution.Content);
+                denied = true,
+                tool = exception.ToolName,
+                userFeedback = exception.Reason,
+                instruction = "Respect the user's decision. Continue without this tool or propose a safer alternative.",
+            });
+            return ToolInvocationResult.DeniedResult(
+                exception.ToolName,
+                content,
+                exception.Reason);
         }
         catch (Exception exception)
         {

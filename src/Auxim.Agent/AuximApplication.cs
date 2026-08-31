@@ -9,8 +9,11 @@ public static class AuximApplication
     public static IAuximRuntime CreateRuntime()
     {
         Func<ToolRegistry> tools = BuiltInTools.CreateDefaultRegistry;
-        var agentRunner = new AuximAgentRunner(DefaultAgentClientFactory.Create, tools);
         var runtimeTools = new RuntimeToolService(tools);
+        var agentRunner = new AuximAgentRunner(
+            DefaultAgentClientFactory.Create,
+            tools,
+            runtimeTools);
         return new AuximRuntimeService(agentRunner, runtimeTools);
     }
 }

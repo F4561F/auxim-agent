@@ -4,7 +4,7 @@ using Auxim.Core.Tools;
 
 namespace Auxim.Core.Runtime;
 
-public sealed class ToolExecutionCoordinator
+internal sealed class ToolExecutionCoordinator
 {
     private readonly ToolRegistry _tools;
     private readonly ToolApprovalService _approvals;
@@ -99,7 +99,7 @@ public sealed class ToolExecutionCoordinator
             cancellationToken);
 }
 
-public sealed record ToolExecutionResult(
+internal sealed record ToolExecutionResult(
     string ToolName,
     string Content,
     bool WasDenied,
@@ -110,18 +110,4 @@ public sealed record ToolExecutionResult(
 
     public static ToolExecutionResult Denied(string toolName, string feedback) =>
         new(toolName, "", true, feedback);
-}
-
-public sealed class ToolApprovalDeniedException : InvalidOperationException
-{
-    public ToolApprovalDeniedException(string toolName, string reason)
-        : base($"Tool '{toolName}' was denied: {reason}")
-    {
-        ToolName = toolName;
-        Reason = reason;
-    }
-
-    public string ToolName { get; }
-
-    public string Reason { get; }
 }
