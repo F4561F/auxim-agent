@@ -31,6 +31,7 @@ public sealed class AuximAgentRunner : IAgentRunner
             MaxIterations = request.Configuration.Agent.MaxIterations,
             RunId = request.RunId,
             HomeDirectory = request.HomeDirectory,
+            EnvironmentDescription = request.EnvironmentDescription,
             ApprovalHandler = request.ApprovalHandler,
             EventSink = request.EventSink,
         };

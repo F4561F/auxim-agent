@@ -11,6 +11,7 @@ public sealed class AgentOptions
     public IReadOnlyList<string> EnabledToolsets { get; init; } = ["core"];
     public AuximRunId RunId { get; init; } = AuximRunId.New();
     public string HomeDirectory { get; init; } = "";
+    public string EnvironmentDescription { get; init; } = "";
     public IApprovalHandler ApprovalHandler { get; init; } = NonInteractiveApprovalHandler.Instance;
     public IRuntimeEventSink? EventSink { get; init; }
 }

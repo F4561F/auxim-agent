@@ -2,6 +2,7 @@ using Auxim.Core.Config;
 using Auxim.Core.State;
 using Auxim.Core.Approval;
 using Auxim.Core.Resources;
+using Auxim.VAFS;
 
 namespace Auxim.Core.Runtime;
 
@@ -12,6 +13,7 @@ public sealed partial class AuximRuntimeService : IAuximRuntime
     private readonly Func<SessionStore> _sessionStoreFactory;
     private readonly Func<AuximConfig> _configLoader;
     private readonly Func<string> _homeDirectory;
+    private readonly Func<string> _environmentDescription;
     private readonly object _externalConversationGate = new();
 
     public AuximRuntimeService(
@@ -19,13 +21,16 @@ public sealed partial class AuximRuntimeService : IAuximRuntime
         IRuntimeToolService? tools = null,
         Func<SessionStore>? sessionStoreFactory = null,
         Func<AuximConfig>? configLoader = null,
-        Func<string>? homeDirectory = null)
+        Func<string>? homeDirectory = null,
+        Func<string>? environmentDescription = null)
     {
         _agentRunner = agentRunner;
         _tools = tools ?? EmptyRuntimeToolService.Instance;
         _sessionStoreFactory = sessionStoreFactory ?? (() => new SessionStore());
         _configLoader = configLoader ?? (() => ConfigLoader.Load());
         _homeDirectory = homeDirectory ?? ConfigLoader.GetAuximHome;
+        _environmentDescription = environmentDescription
+            ?? (() => VirtualAgentFileSystem.FromEnvironment().DescribeForAgent());
     }
 
     public AuximRuntimeStatus GetStatus()
@@ -171,6 +176,7 @@ public sealed partial class AuximRuntimeService : IAuximRuntime
             session.Messages.ToArray(),
             config,
             _homeDirectory(),
+            _environmentDescription(),
             options?.ApprovalHandler ?? NonInteractiveApprovalHandler.Instance,
             eventSink);
 

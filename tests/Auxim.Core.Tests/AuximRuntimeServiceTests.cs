@@ -37,6 +37,7 @@ public sealed class AuximRuntimeServiceTests : IDisposable
     [Fact]
     public async Task ChatAsyncUsesInjectedAgentRunner()
     {
+        const string environmentDescription = "runtime-provided environment";
         var runner = new FakeAgentRunner("fake response");
         var approvalHandler = new RecordingApprovalHandler(remember: false);
         var events = new List<RuntimeEvent>();
@@ -50,7 +51,8 @@ public sealed class AuximRuntimeServiceTests : IDisposable
             runner,
             sessionStoreFactory: () => new SessionStore(_home),
             configLoader: () => config,
-            homeDirectory: () => _home);
+            homeDirectory: () => _home,
+            environmentDescription: () => environmentDescription);
 
         var result = await runtime.ChatAsync(
             new AuximChatRequest("run through fake"),
@@ -72,6 +74,7 @@ public sealed class AuximRuntimeServiceTests : IDisposable
         Assert.Equal(result.RunId, runner.Request.RunId);
         Assert.Equal(result.SessionId, runner.Request.SessionId);
         Assert.Equal(_home, runner.Request.HomeDirectory);
+        Assert.Equal(environmentDescription, runner.Request.EnvironmentDescription);
         Assert.Same(config, runner.Request.Configuration);
         Assert.Empty(runner.Request.SessionContext);
         Assert.Same(approvalHandler, runner.Request.ApprovalHandler);

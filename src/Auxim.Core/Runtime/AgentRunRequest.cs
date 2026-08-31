@@ -10,5 +10,6 @@ public sealed record AgentRunRequest(
     IReadOnlyList<AgentMessage> SessionContext,
     AuximConfig Configuration,
     string HomeDirectory,
+    string EnvironmentDescription,
     IApprovalHandler ApprovalHandler,
     IRuntimeEventSink EventSink);

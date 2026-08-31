@@ -2,7 +2,6 @@ using System.Text.Json;
 using Auxim.Core.Config;
 using Auxim.Core.Tools;
 using Auxim.Core.Runtime;
-using Auxim.VAFS;
 
 namespace Auxim.Agent;
 
@@ -75,7 +74,7 @@ public sealed class AuximAgent
             $"You are Auxim. Provider={_options.Provider}; Model={_options.Model}.",
             "Use Auxim VAFS paths only. Never assume or mention host filesystem paths.",
             "Use /tmp for temporary generated files and scratch output.",
-            VirtualAgentFileSystem.FromEnvironment().DescribeForAgent(),
+            _options.EnvironmentDescription,
         ]);
     }
 

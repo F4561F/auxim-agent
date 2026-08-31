@@ -13,6 +13,7 @@ public sealed class AuximAgentToolExecutionTests
     [Fact]
     public async Task RunnerUsesRuntimeToolServiceAndReturnsDenialFeedbackToAgent()
     {
+        const string environmentDescription = "runtime-provided VAFS environment";
         var client = new DeniedToolCallAgentClient();
         var runtimeTools = new DenyingRuntimeToolService("user rejected this operation");
         var registry = new ToolRegistry();
@@ -39,6 +40,7 @@ public sealed class AuximAgentToolExecutionTests
                 Agent = new AgentConfig { MaxIterations = 2 },
             },
             home,
+            environmentDescription,
             NonInteractiveApprovalHandler.Instance,
             NullEventSink.Instance));
 
@@ -48,6 +50,11 @@ public sealed class AuximAgentToolExecutionTests
         Assert.Equal("protected.write", runtimeTools.ToolName);
         Assert.Equal("/workspace/file.txt", runtimeTools.Arguments["path"]?.ToString());
         Assert.Equal(home, runtimeTools.HomeDirectory);
+
+        var systemPrompt = Assert.Single(
+            client.Requests[0],
+            message => message.Role == "system");
+        Assert.Contains(environmentDescription, systemPrompt.Content);
 
         var followUp = Assert.Single(client.Requests.Skip(1));
         var toolResult = Assert.Single(followUp, message => message.Role == "tool");
