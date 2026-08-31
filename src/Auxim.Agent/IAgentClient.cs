@@ -1,6 +1,6 @@
 using Auxim.Core.Runtime;
 
-namespace Auxim.Core.Agent;
+namespace Auxim.Agent;
 
 public interface IAgentClient
 {

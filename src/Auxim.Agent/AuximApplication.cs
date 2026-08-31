@@ -1,8 +1,8 @@
-using Auxim.Core.Agent;
 using Auxim.Core.Runtime;
 using Auxim.Core.Tools;
+using Auxim.Tools;
 
-namespace Auxim.Tools;
+namespace Auxim.Agent;
 
 public static class AuximApplication
 {

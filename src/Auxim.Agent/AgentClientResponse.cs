@@ -1,6 +1,7 @@
 using Auxim.Core.Runtime;
+using Auxim.Core.Tools;
 
-namespace Auxim.Core.Agent;
+namespace Auxim.Agent;
 
 public sealed record AgentClientResponse(
     string Content,
@@ -13,7 +14,7 @@ public interface IToolCallingAgentClient : IAgentClient
 {
     Task<AgentClientResponse> CompleteWithToolsAsync(
         IReadOnlyList<AgentMessage> messages,
-        IReadOnlyList<Tools.ToolDefinition> tools,
+        IReadOnlyList<ToolDefinition> tools,
         CancellationToken cancellationToken);
 }
 
@@ -21,7 +22,7 @@ public interface IStreamingToolCallingAgentClient : IToolCallingAgentClient
 {
     Task<AgentClientResponse> CompleteWithToolsStreamingAsync(
         IReadOnlyList<AgentMessage> messages,
-        IReadOnlyList<Tools.ToolDefinition> tools,
+        IReadOnlyList<ToolDefinition> tools,
         Func<string, CancellationToken, ValueTask> contentDeltaSink,
         CancellationToken cancellationToken);
 }

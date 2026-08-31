@@ -4,7 +4,7 @@ using Auxim.Core.Tools;
 
 namespace Auxim.Core.Runtime;
 
-internal sealed class ToolExecutionCoordinator
+public sealed class ToolExecutionCoordinator
 {
     private readonly ToolRegistry _tools;
     private readonly ToolApprovalService _approvals;
@@ -99,7 +99,7 @@ internal sealed class ToolExecutionCoordinator
             cancellationToken);
 }
 
-internal sealed record ToolExecutionResult(
+public sealed record ToolExecutionResult(
     string ToolName,
     string Content,
     bool WasDenied,

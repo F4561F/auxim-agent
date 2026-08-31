@@ -4,7 +4,7 @@ using Auxim.Core.Tools;
 using Auxim.Core.Runtime;
 using Auxim.VAFS;
 
-namespace Auxim.Core.Agent;
+namespace Auxim.Agent;
 
 public sealed class AuximAgent
 {
@@ -19,7 +19,7 @@ public sealed class AuximAgent
         _client = client;
         _tools = tools;
         _options = options ?? new AgentOptions();
-        _eventSink = _options.EventSink ?? NullRuntimeEventSink.Instance;
+        _eventSink = _options.EventSink ?? NullAgentRuntimeEventSink.Instance;
         _toolExecution = new ToolExecutionCoordinator(
             tools,
             string.IsNullOrWhiteSpace(_options.HomeDirectory)
@@ -137,8 +137,8 @@ public sealed class AuximAgent
                 tools,
                 (delta, token) => _eventSink.PublishAsync(
                     new RuntimeContentDeltaEvent(
-                        RuntimeEventFactory.NewEventId(),
-                        RuntimeEventFactory.Now(),
+                        Guid.NewGuid().ToString("N"),
+                        DateTimeOffset.UtcNow,
                         _options.RunId,
                         delta),
                     token),
@@ -202,6 +202,17 @@ public sealed class AuximAgent
 
         var parsed = JsonSerializer.Deserialize<Dictionary<string, object?>>(argumentsJson);
         return parsed ?? new Dictionary<string, object?>();
+    }
+
+    private sealed class NullAgentRuntimeEventSink : IRuntimeEventSink
+    {
+        public static NullAgentRuntimeEventSink Instance { get; } = new();
+
+        public ValueTask PublishAsync(RuntimeEvent runtimeEvent, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed record ToolInvocationResult(

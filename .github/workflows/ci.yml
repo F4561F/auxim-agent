@@ -11,6 +11,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        solution: [Auxim.Kernel.sln, Auxim.Agent.sln]
 
     runs-on: ${{ matrix.os }}
 
@@ -23,11 +24,11 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Restore
-        run: dotnet restore
+      - name: Restore ${{ matrix.solution }}
+        run: dotnet restore ${{ matrix.solution }}
 
-      - name: Build
-        run: dotnet build --no-restore -c Release
+      - name: Build ${{ matrix.solution }}
+        run: dotnet build ${{ matrix.solution }} --no-restore -c Release
 
-      - name: Test
-        run: dotnet test --no-build -c Release --verbosity normal
+      - name: Test ${{ matrix.solution }}
+        run: dotnet test ${{ matrix.solution }} --no-build -c Release --verbosity normal

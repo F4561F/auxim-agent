@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 using Auxim.Core.Runtime;
 using Auxim.Core.Tools;
 
-namespace Auxim.Core.Agent;
+namespace Auxim.Agent;
 
 public sealed class OpenAiCompatibleAgentClient : IStreamingToolCallingAgentClient
 {
